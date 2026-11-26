@@ -130,4 +130,5 @@ const COUNTRIES_DATA = [
         color: '#ef4444', flagColor: '#ef4444' }
 ];
 
-export { COUNTRIES_DATA };
+// COUNTRIES_DATA is a global variable
+

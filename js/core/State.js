@@ -1,68 +1,60 @@
 /**
  * State — единственный источник истины состояния игры.
- * Хранит время, игрока, страны, провинции, флаг паузы и скорость.
  */
-class State {
-    constructor() {
-        this.date = new Date(2000, 0, 1); // 1 января 2000
-        this.speed = 0; // 0=пауза, 1,2,4,8
+var State = (function() {
+    function State() {
+        this.date = new Date(2000, 0, 1);
+        this.speed = 0;
         this.paused = true;
         this.playerCountryTag = 'USA';
-        this.dayTicks = 0; // такты внутри дня
+        this.dayTicks = 0;
 
-        this.countries = new Map();      // tag -> Country
-        this.provinces = new Map();      // id -> Province
-        this.relations = new Map();      // "TAG1-TAG2" -> Relation
-        this.news = [];                  // массив новостей
-        this.eventLog = [];              // журнал событий
-        this.units = new Map();          // id -> Unit (стратегические)
-        this.modifiers = new Map();      // глобальные модификаторы
+        this.countries = new Map();
+        this.provinces = new Map();
+        this.relations = new Map();
+        this.news = [];
+        this.eventLog = [];
+        this.units = new Map();
+        this.modifiers = new Map();
 
         this.initialized = false;
     }
-
-    getDateString() {
-        const d = this.date;
-        const months = ['января','февраля','марта','апреля','мая','июня',
+    State.prototype.getDateString = function() {
+        var d = this.date;
+        var months = ['января','февраля','марта','апреля','мая','июня',
             'июля','августа','сентября','октября','ноября','декабря'];
-        return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-    }
-
-    getSpeedLabel() {
+        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+    };
+    State.prototype.getSpeedLabel = function() {
         if (this.paused || this.speed === 0) return 'Пауза';
-        return `x${this.speed}`;
-    }
-
-    setSpeed(speed) {
+        return 'x' + this.speed;
+    };
+    State.prototype.setSpeed = function(speed) {
         this.speed = speed;
         this.paused = speed === 0;
         eventBus.emit('game:speedChanged', { speed: this.speed, paused: this.paused });
-    }
-
-    togglePause() {
+    };
+    State.prototype.togglePause = function() {
         this.setSpeed(this.paused ? 1 : 0);
-    }
-
-    addNews(item) {
-        this.news.unshift({ ...item, id: Date.now() + Math.random(), read: false });
+    };
+    State.prototype.addNews = function(item) {
+        this.news.unshift(Object.assign({ id: Date.now() + Math.random(), read: false }, item));
         if (this.news.length > 200) this.news.length = 200;
         eventBus.emit('ui:newsAdded', item);
-    }
-
-    addLog(msg) {
-        const entry = `[${this.getDateString()}] ${msg}`;
+    };
+    State.prototype.addLog = function(msg) {
+        var entry = '[' + this.getDateString() + '] ' + msg;
         this.eventLog.unshift(entry);
         if (this.eventLog.length > 100) this.eventLog.length = 100;
         eventBus.emit('ui:logAdded', entry);
-    }
-
-    getCountry(tag) { return this.countries.get(tag); }
-    getPlayerCountry() { return this.countries.get(this.playerCountryTag); }
-    setPlayerCountry(tag) {
+    };
+    State.prototype.getCountry = function(tag) { return this.countries.get(tag); };
+    State.prototype.getPlayerCountry = function() { return this.countries.get(this.playerCountryTag); };
+    State.prototype.setPlayerCountry = function(tag) {
         this.playerCountryTag = tag;
-        eventBus.emit('game:playerChanged', { tag });
-    }
-}
+        eventBus.emit('game:playerChanged', { tag: tag });
+    };
+    return State;
+})();
 
-const state = new State();
-export { state, State };
+var state = new State();
