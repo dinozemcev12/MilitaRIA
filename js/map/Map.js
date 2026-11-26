@@ -1,8 +1,9 @@
 /**
  * Map.js — глобальная карта мира (Этап 1).
+ * Класс назван GameMap, чтобы не конфликтовать со встроенным ES6 Map.
  */
-var Map = (function() {
-    function Map(containerId) {
+var GameMap = (function() {
+    function GameMap(containerId) {
         this.container = document.getElementById(containerId);
         this.overlay = document.getElementById('map-overlay');
         this.scale = 1;
@@ -25,7 +26,7 @@ var Map = (function() {
         this.render();
     }
 
-    Map.prototype._initCanvas = function() {
+    GameMap.prototype._initCanvas = function() {
         this.container.innerHTML = '';
         this.canvas = document.createElement('canvas');
         this.canvas.style.display = 'block';
@@ -36,12 +37,12 @@ var Map = (function() {
         this._resize();
     };
 
-    Map.prototype._resize = function() {
+    GameMap.prototype._resize = function() {
         this.canvas.width = this.container.clientWidth;
         this.canvas.height = this.container.clientHeight;
     };
 
-    Map.prototype._generateWorldMap = function() {
+    GameMap.prototype._generateWorldMap = function() {
         var regions = [
             { tag: 'USA', name: 'Северная Америка', x: 120, y: 180, w: 260, h: 160 },
             { tag: 'RUS', name: 'Евразия (Россия)', x: 360, y: 100, w: 560, h: 220 },
@@ -70,7 +71,7 @@ var Map = (function() {
         });
     };
 
-    Map.prototype._countryColor = function(tag) {
+    GameMap.prototype._countryColor = function(tag) {
         var map = {
             USA: '#3b82f6', RUS: '#ef4444', UKR: '#4ade80', CHN: '#ef4444',
             GBR: '#3b82f6', FRA: '#ef4444', DEU: '#ef4444', POL: '#ef4444',
@@ -83,7 +84,7 @@ var Map = (function() {
         return map[tag] || '#6b7280';
     };
 
-    Map.prototype._bindEvents = function() {
+    GameMap.prototype._bindEvents = function() {
         var canvas = this.canvas;
         var self = this;
 
@@ -142,7 +143,7 @@ var Map = (function() {
         window.addEventListener('resize', function() { self._resize(); });
     };
 
-    Map.prototype.render = function() {
+    GameMap.prototype.render = function() {
         if (!this.ctx) return;
         var ctx = this.ctx;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -187,7 +188,7 @@ var Map = (function() {
         }
     };
 
-    Map.prototype.centerOn = function(tag) {
+    GameMap.prototype.centerOn = function(tag) {
         var p = this.provinces.find(function(pr) { return pr.tag === tag; });
         if (!p) return;
         this.offsetX = this.canvas.width / 2 - (p.x + p.w / 2) * this.scale;
@@ -195,5 +196,5 @@ var Map = (function() {
         this.render();
     };
 
-    return Map;
+    return GameMap;
 })();

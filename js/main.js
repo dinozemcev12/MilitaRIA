@@ -31,7 +31,7 @@
     });
 
     // --- Модули ---
-    var gameMap = new Map('map-canvas-container');
+    var gameMap = new GameMap('map-canvas-container');
     var ui = new UI();
 
     // Скорость времени
