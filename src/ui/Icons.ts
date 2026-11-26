@@ -9,6 +9,7 @@ const svg = (paths: string, size = 15): string =>
 export const Icons = {
   // Навигация и разделы
   politics:   (s = 16) => svg('<path d="M12 3v18"/><path d="M5 7h14"/><path d="m3 14 3-7 3 7a3 3 0 0 1-6 0Z"/><path d="m15 14 3-7 3 7a3 3 0 0 1-6 0Z"/>', s),
+  mountain:   (s = 14) => svg('<path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15h15.72"/>', s),
   economy:    (s = 16) => svg('<circle cx="12" cy="12" r="9"/><path d="M14.5 9a2.5 2.5 0 0 0-5 0c0 2 5 1.5 5 4a2.5 2.5 0 0 1-5 0"/><path d="M12 6.5v11"/>', s),
   diplomacy:  (s = 16) => svg('<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M12 3a14 14 0 0 0 0 18"/><path d="M12 3a14 14 0 0 1 0 18"/>', s),
   army:       (s = 16) => svg('<path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M9.5 6.5 21 18v3h-3L6.5 9.5"/>', s),

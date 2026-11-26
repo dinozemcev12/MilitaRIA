@@ -12,6 +12,7 @@ import { technologySystem } from '../tech/TechnologySystem.js';
 import { logisticsSystem } from '../logistics/LogisticsSystem.js';
 import { productionSystem } from '../production/ProductionSystem.js';
 import { intelSystem } from '../intel/IntelSystem.js';
+import { aiSystem } from '../ai/AISystem.js';
 import { uiSystem } from '../ui/UISystem.js';
 
 const SAVE_VERSION = 3;
@@ -33,6 +34,7 @@ export interface SaveData {
   logistics?: any;
   production?: any;
   intel?: any;
+  ai?: any;
   ui: any;
 }
 
@@ -40,6 +42,7 @@ class SaveSystem {
   private static instance: SaveSystem;
   private autosaveInterval = 0;
   private lastAutosaveDay = -1;
+  private memoryStorage = new Map<string, string>();
 
   static getInstance(): SaveSystem {
     if (!SaveSystem.instance) SaveSystem.instance = new SaveSystem();
@@ -47,6 +50,23 @@ class SaveSystem {
   }
 
   private constructor() {}
+
+  private _getItem(key: string): string | null {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) return localStorage.getItem(key);
+    } catch {}
+    return this.memoryStorage.get(key) ?? null;
+  }
+
+  private _setItem(key: string, value: string): void {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(key, value);
+        return;
+      }
+    } catch {}
+    this.memoryStorage.set(key, value);
+  }
 
   init(): void {
     // Автосохранение при смене дня (каждые 30 игровых дней)
@@ -63,7 +83,7 @@ class SaveSystem {
   save(slot: number): boolean {
     try {
       const data = this._collectData(slot);
-      localStorage.setItem(`${SLOT_PREFIX}${slot}`, JSON.stringify(data));
+      this._setItem(`${SLOT_PREFIX}${slot}`, JSON.stringify(data));
       eventBus.emit(GameEvents.GAME_SAVED, { slot, timestamp: data.timestamp });
       console.log(`[SaveSystem] сохранено в слот ${slot}`);
       return true;
@@ -76,7 +96,7 @@ class SaveSystem {
   autosave(): void {
     try {
       const data = this._collectData(-1);
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(data));
+      this._setItem(AUTOSAVE_KEY, JSON.stringify(data));
       console.log('[SaveSystem] автосохранение');
     } catch (e) {
       console.error('[SaveSystem] ошибка автосохранения:', e);
@@ -87,7 +107,7 @@ class SaveSystem {
   load(slot: number): boolean {
     try {
       const key = slot === -1 ? AUTOSAVE_KEY : `${SLOT_PREFIX}${slot}`;
-      const raw = localStorage.getItem(key);
+      const raw = this._getItem(key);
       if (!raw) return false;
       const data: SaveData = JSON.parse(raw);
       if (data.version !== SAVE_VERSION) {
@@ -110,7 +130,7 @@ class SaveSystem {
     for (let i = 1; i <= MAX_SLOTS; i++) keys.push({ slot: i, key: `${SLOT_PREFIX}${i}` });
 
     for (const { slot, key } of keys) {
-      const raw = localStorage.getItem(key);
+      const raw = this._getItem(key);
       if (!raw) continue;
       try {
         const d: SaveData = JSON.parse(raw);
@@ -148,6 +168,7 @@ class SaveSystem {
       logistics: logisticsSystem.getState(),
       production: productionSystem.getState(),
       intel: intelSystem.getState(),
+      ai: aiSystem.getState(),
       ui: uiSystem.getState()
     };
   }
@@ -170,13 +191,15 @@ class SaveSystem {
     if (data.production) productionSystem.setState(data.production);
     if (data.intel) intelSystem.setState(data.intel);
 
+    // ИИ
+    if (data.ai) aiSystem.setState(data.ai);
+
     // UI
     if (data.ui) uiSystem.setState(data.ui);
 
     // Время
     if (data.gameDate) {
-      const gt = gameTime as any;
-      if (gt._date) Object.assign(gt._date, data.gameDate);
+      gameTime.setDate(data.gameDate);
     }
   }
 

@@ -22,6 +22,7 @@ const LNG_MAX = 180;
 
 export type MapMode =
   | 'political'
+  | 'terrain'
   | 'diplomacy'
   | 'economy'
   | 'military'
@@ -35,6 +36,7 @@ interface Vec { x: number; y: number; }
 
 const MAP_MODE_LEGENDS: Record<MapMode, { title: string; items: { color: string; label: string }[] }> = {
   political:      { title: 'Политическая', items: [{ color: '#3fb950', label: 'Ваша страна' }, { color: '#fbc02d', label: 'Выбрано' }] },
+  terrain:        { title: 'Рельеф', items: [{ color: '#cbd5e1', label: 'Хребты и пики' }, { color: '#475569', label: 'Горы' }, { color: '#166534', label: 'Леса/тайга' }, { color: '#ca8a04', label: 'Пустыни' }, { color: '#38bdf8', label: 'Реки' }] },
   diplomacy:      { title: 'Дипломатия', items: [{ color: '#1f6feb', label: 'Союзники' }, { color: '#3fb950', label: 'Дружеств.' }, { color: '#d97706', label: 'Враждебн.' }, { color: '#c62828', label: 'Война' }] },
   economy:        { title: 'Экономика (ВВП)', items: [{ color: '#1ce14e', label: 'Сверхдержавы' }, { color: '#1c8c4e', label: 'Средний' }, { color: '#1c464e', label: 'Низкий' }] },
   military:       { title: 'Военная мощь', items: [{ color: '#e13434', label: 'Крупная армия' }, { color: '#8c3434', label: 'Средняя' }, { color: '#4b3434', label: 'Малая' }] },
@@ -88,6 +90,13 @@ export class WorldMapSystem implements IGameSystem {
     this.resize();
     window.addEventListener('resize', this.boundResize);
     this._attachInput();
+    eventBus.on(GameEvents.GAME_LOADED, () => {
+      this.selectedUnitId = null;
+      this._render();
+    });
+    eventBus.on(GameEvents.COUNTRY_SELECTED, () => {
+      this._render();
+    });
     this._render();
     console.log('[WorldMapSystem] инициализировано (реальная карта мира + инфраструктура)');
   }
@@ -368,6 +377,8 @@ export class WorldMapSystem implements IGameSystem {
         const lvl = intelSystem.getIntelLevel(player.code, c.code);
         return lvl >= 0.75 ? '#1f6feb' : lvl >= 0.45 ? '#d29922' : '#3a4452';
       }
+      case 'terrain':
+        return 'rgba(0,0,0,0)';
       case 'political':
       default:
         return c.color;
@@ -389,17 +400,21 @@ export class WorldMapSystem implements IGameSystem {
     this._drawGraticule();
     this._drawAntarctica();
 
-    // 1. Физическая подложка суши и рельефа (как в HOI4 — видна сквозь полупрозрачные цвета стран)
+    // 1. Физическая подложка суши и биомов (как в HOI4)
     const countries = countrySystem.getAll();
     this._drawLandBase(countries);
-    this._drawTerrainOverlays();
-    this._drawRivers();
+    this._drawHoIBaseTerrain();
 
-    // 2. Полупрозрачная политическая/режимная заливка стран и чёткие границы
+    // 2. Политическая заливка стран и чёткие границы
     const player = countrySystem.getPlayer();
     for (const c of countries) {
       this._drawCountry(c);
     }
+
+    // 3. Рельефные хребты, затенение склонов (hillshading), пики и реки поверх заливки
+    this._drawHoIReliefShading(this.mapMode === 'terrain');
+    this._drawRivers();
+    this._drawTerrainLabels();
 
     this._drawTransportCorridors();
 
@@ -485,7 +500,8 @@ export class WorldMapSystem implements IGameSystem {
   private _drawLandBase(countries: Country[]): void {
     const ctx = this.ctx!;
     ctx.save();
-    ctx.fillStyle = '#25332a'; // базовая физическая суша (равнины)
+    // В режиме 'terrain' базовая суша имеет сочный тон низменностей, в других режимах — приглушённый
+    ctx.fillStyle = this.mapMode === 'terrain' ? '#223824' : '#273429';
     for (const c of countries) {
       const polys = getCountryPolygons(c.code);
       if (!polys.length) continue;
@@ -503,13 +519,23 @@ export class WorldMapSystem implements IGameSystem {
     ctx.save();
     const isInspected = this.inspectedCode === c.code;
     const isHovered = this.hoverCode === c.code;
+    const isTerrainMode = this.mapMode === 'terrain';
     const fillColor = this._getCountryFillColor(c);
-    ctx.fillStyle = fillColor;
-    // Как в HOI4: полупрозрачная заливка, сквозь которую виден рельеф
-    ctx.globalAlpha = isInspected ? 0.56 : isHovered ? 0.48 : 0.38;
 
-    this._traceCountryPath(ctx, c);
-    ctx.fill();
+    // Заливка территории страны
+    if (!isTerrainMode) {
+      ctx.fillStyle = fillColor;
+      // В HoI4 полупрозрачные цвета наций: рельеф пробивается сквозь цвет
+      ctx.globalAlpha = isInspected ? 0.48 : isHovered ? 0.40 : 0.30;
+      this._traceCountryPath(ctx, c);
+      ctx.fill();
+    } else if (isInspected || isHovered) {
+      // В режиме рельефа земля открыта на 100%, при наведении — деликатная подсветка
+      ctx.fillStyle = isInspected ? 'rgba(251, 191, 36, 0.20)' : 'rgba(255, 255, 255, 0.10)';
+      ctx.globalAlpha = 1;
+      this._traceCountryPath(ctx, c);
+      ctx.fill();
+    }
 
     // Визуальная штриховка оккупированной страны цветом оккупанта
     if (c.occupiedBy) {
@@ -518,8 +544,8 @@ export class WorldMapSystem implements IGameSystem {
       this._traceCountryPath(ctx, c);
       ctx.clip();
       ctx.strokeStyle = occ?.color ?? '#ef4444';
-      ctx.globalAlpha = 0.6;
-      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 2.2;
       const step = 12;
       for (let x = -this.canvas!.height; x < this.canvas!.width + this.canvas!.height; x += step) {
         ctx.beginPath();
@@ -530,21 +556,22 @@ export class WorldMapSystem implements IGameSystem {
       ctx.restore();
     }
 
-    // Внутренний цветной контур границы (стиль HOI4) + тёмная обводка
-    ctx.globalAlpha = 0.72;
-    ctx.strokeStyle = fillColor;
-    ctx.lineWidth = Math.max(1.2, Math.min(2.6, this.scale * 0.9));
+    // Внутренний цветной контур границы (стиль HOI4) + внешняя чёткая обводка
+    ctx.globalAlpha = isTerrainMode ? 0.95 : 0.78;
+    ctx.strokeStyle = isTerrainMode ? c.color : fillColor;
+    ctx.lineWidth = Math.max(1.2, Math.min(2.8, this.scale * (isTerrainMode ? 1.1 : 0.9)));
     ctx.stroke();
 
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = isTerrainMode ? 0.85 : 0.90;
     ctx.strokeStyle = 'rgba(9, 13, 18, 0.85)';
-    ctx.lineWidth = Math.max(0.6, Math.min(1.3, this.scale * 0.45));
+    ctx.lineWidth = Math.max(0.6, Math.min(1.4, this.scale * 0.45));
     ctx.stroke();
     ctx.restore();
   }
 
-  private _drawTerrainOverlays(): void {
+  private _drawHoIBaseTerrain(): void {
     const ctx = this.ctx!;
+    const isTerrain = this.mapMode === 'terrain';
     ctx.save();
     for (const z of TERRAIN_ZONES) {
       const p = this.worldToScreen(z.lat, z.lng);
@@ -558,52 +585,250 @@ export class WorldMapSystem implements IGameSystem {
       if (z.angle) ctx.rotate(z.angle);
       ctx.beginPath();
       ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+
       if (z.type === 'desert') {
-        ctx.fillStyle = 'rgba(194, 158, 92, 0.48)';
+        ctx.fillStyle = isTerrain ? 'rgba(217, 119, 6, 0.45)' : 'rgba(180, 100, 20, 0.32)';
         ctx.fill();
-      } else if (z.type === 'forest') {
-        ctx.fillStyle = 'rgba(20, 83, 45, 0.52)';
-        ctx.fill();
-      } else if (z.type === 'mountain') {
-        ctx.fillStyle = 'rgba(100, 116, 139, 0.52)';
-        ctx.fill();
-        if (this.scale >= 1.2) {
-          ctx.fillStyle = 'rgba(226, 232, 240, 0.55)';
-          const peaks = Math.min(6, Math.max(2, Math.floor(rx / 12)));
-          for (let i = 0; i < peaks; i++) {
-            const ox = ((i / Math.max(1, peaks - 1)) - 0.5) * rx * 1.1;
+        // Дюны / песчаные волны
+        if (this.scale >= 1.0) {
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.22)';
+          ctx.lineWidth = 1;
+          const lines = Math.min(8, Math.max(3, Math.floor(ry / 10)));
+          for (let i = -lines; i <= lines; i++) {
+            const yy = (i / (lines + 1)) * ry * 0.8;
+            const w = rx * Math.sqrt(Math.max(0, 1 - (yy / ry) ** 2)) * 0.75;
             ctx.beginPath();
-            ctx.moveTo(ox, -6);
-            ctx.lineTo(ox - 5, 4);
-            ctx.lineTo(ox + 5, 4);
-            ctx.closePath();
-            ctx.fill();
+            ctx.moveTo(-w, yy);
+            ctx.bezierCurveTo(-w * 0.3, yy - 3, w * 0.3, yy + 3, w, yy);
+            ctx.stroke();
           }
         }
+      } else if (z.type === 'forest') {
+        ctx.fillStyle = isTerrain ? 'rgba(21, 128, 61, 0.46)' : 'rgba(20, 83, 45, 0.35)';
+        ctx.fill();
+        // Текстура крон деревьев (тайга / сельва в стиле HoI)
+        if (this.scale >= 1.1) {
+          ctx.fillStyle = isTerrain ? 'rgba(15, 90, 42, 0.55)' : 'rgba(12, 60, 30, 0.45)';
+          const count = Math.min(18, Math.max(4, Math.floor((rx * ry) / 450)));
+          for (let i = 0; i < count; i++) {
+            const seed = (i * 9301 + 49297) % 233280;
+            const rnd1 = (seed / 233280) * 2 - 1;
+            const rnd2 = (((seed * 9301 + 49297) % 233280) / 233280) * 2 - 1;
+            if (rnd1 * rnd1 + rnd2 * rnd2 <= 0.75) {
+              const cx = rnd1 * rx * 0.75;
+              const cy = rnd2 * ry * 0.75;
+              const rad = Math.min(8, 2.5 + this.scale * 0.8);
+              ctx.beginPath();
+              ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+        }
+      } else if (z.type === 'marsh') {
+        ctx.fillStyle = isTerrain ? 'rgba(14, 116, 144, 0.42)' : 'rgba(21, 94, 117, 0.32)';
+        ctx.fill();
+      } else if (z.type === 'mountain') {
+        // Подложка горного массива
+        ctx.fillStyle = isTerrain ? 'rgba(51, 65, 85, 0.52)' : 'rgba(40, 52, 68, 0.35)';
+        ctx.fill();
       }
       ctx.restore();
     }
     ctx.restore();
   }
 
+  private _drawHoIReliefShading(isTerrainMode: boolean): void {
+    const ctx = this.ctx!;
+    const w = this.canvas!.width;
+    const h = this.canvas!.height;
+    ctx.save();
+
+    for (const z of TERRAIN_ZONES) {
+      if (z.type !== 'mountain') continue;
+
+      if (z.ridgePoints && z.ridgePoints.length >= 2) {
+        const pts = z.ridgePoints.map(([lat, lng]) => this.worldToScreen(lat, lng));
+        // Быстрый отсев невидимых за экраном хребтов
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of pts) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        }
+        if (maxX < -60 || minX > w + 60 || maxY < -60 || minY > h + 60) continue;
+
+        const elev = z.elevation ?? 0.75;
+        const widthScale = Math.min(2.4, Math.max(0.7, this.scale));
+
+        // 1. Основание горного массива (эшелонированное расширение)
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x, pts[0]!.y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+        ctx.lineWidth = Math.max(7, elev * 24 * widthScale);
+        ctx.strokeStyle = isTerrainMode ? 'rgba(38, 48, 60, 0.70)' : 'rgba(25, 33, 44, 0.45)';
+        ctx.stroke();
+
+        ctx.lineWidth = Math.max(4, elev * 14 * widthScale);
+        ctx.strokeStyle = isTerrainMode ? 'rgba(55, 68, 85, 0.85)' : 'rgba(40, 52, 68, 0.60)';
+        ctx.stroke();
+
+        // 2. Hillshading: Затенение склонов с Юго-Востока (свет с Северо-Запада под 315°)
+        const off = Math.max(1.8, elev * 3.8 * widthScale);
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x + off, pts[0]!.y + off * 1.2);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x + off, pts[i]!.y + off * 1.2);
+        ctx.lineWidth = Math.max(3, elev * 9 * widthScale);
+        ctx.strokeStyle = isTerrainMode ? 'rgba(10, 16, 26, 0.88)' : 'rgba(2, 6, 20, 0.68)';
+        ctx.stroke();
+
+        // 3. Hillshading: Освещённый склон с Северо-Запада (гребень в лучах солнца)
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x - off, pts[0]!.y - off * 1.2);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x - off, pts[i]!.y - off * 1.2);
+        ctx.lineWidth = Math.max(2, elev * 6.5 * widthScale);
+        ctx.strokeStyle = isTerrainMode ? 'rgba(248, 250, 252, 0.88)' : 'rgba(255, 255, 255, 0.72)';
+        ctx.stroke();
+
+        // 4. Острый контрастный гребень хребта
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x, pts[0]!.y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+        ctx.lineWidth = Math.max(1.2, 1.8 * widthScale);
+        ctx.strokeStyle = isTerrainMode ? '#f1f5f9' : 'rgba(255, 255, 255, 0.90)';
+        ctx.stroke();
+
+        // 5. Поперечные отроги (горные штрихи в стиле картографии Paradox)
+        ctx.lineWidth = 1;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p1 = pts[i]!, p2 = pts[i + 1]!;
+          const ddx = p2.x - p1.x, ddy = p2.y - p1.y;
+          const len = Math.hypot(ddx, ddy);
+          if (len < 8) continue;
+          const nx = -ddy / len, ny = ddx / len;
+          const steps = Math.floor(len / 12);
+          for (let s = 1; s <= steps; s++) {
+            const t = s / (steps + 1);
+            const mx = p1.x + ddx * t, my = p1.y + ddy * t;
+            const spurLen = (4 + ((s % 2) * 3)) * elev * widthScale;
+            // Светлый отрог на СЗ
+            ctx.strokeStyle = isTerrainMode ? 'rgba(241, 245, 249, 0.60)' : 'rgba(255, 255, 255, 0.45)';
+            ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx + nx * spurLen, my + ny * spurLen); ctx.stroke();
+            // Теневой отрог на ЮВ
+            ctx.strokeStyle = isTerrainMode ? 'rgba(15, 23, 42, 0.70)' : 'rgba(2, 6, 23, 0.55)';
+            ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx - nx * spurLen * 1.2, my - ny * spurLen * 1.2); ctx.stroke();
+          }
+        }
+
+        // 6. 3D-пики вершин со снежными шапками
+        if (this.scale >= 0.95) {
+          for (let i = 0; i < pts.length; i++) {
+            const pt = pts[i]!;
+            const peakH = (6 + (i % 2) * 3) * elev * Math.min(2.0, this.scale);
+            const peakW = peakH * 0.9;
+            // Левая грань (свет)
+            ctx.fillStyle = '#cbd5e1';
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y - peakH);
+            ctx.lineTo(pt.x - peakW, pt.y + peakH * 0.3);
+            ctx.lineTo(pt.x, pt.y + peakH * 0.3);
+            ctx.closePath();
+            ctx.fill();
+            // Правая грань (тень)
+            ctx.fillStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.moveTo(pt.x, pt.y - peakH);
+            ctx.lineTo(pt.x, pt.y + peakH * 0.3);
+            ctx.lineTo(pt.x + peakW, pt.y + peakH * 0.3);
+            ctx.closePath();
+            ctx.fill();
+            // Снежная шапка на вершине (для высоких гор)
+            if (elev >= 0.70) {
+              ctx.fillStyle = '#ffffff';
+              ctx.beginPath();
+              ctx.moveTo(pt.x, pt.y - peakH);
+              ctx.lineTo(pt.x - peakW * 0.45, pt.y - peakH * 0.4);
+              ctx.lineTo(pt.x + peakW * 0.45, pt.y - peakH * 0.4);
+              ctx.closePath();
+              ctx.fill();
+            }
+          }
+        }
+      } else {
+        // Одиночный горный массив (если нет ridgePoints)
+        const p = this.worldToScreen(z.lat, z.lng);
+        const pEdge = this.worldToScreen(z.lat + z.rx, z.lng + z.ry);
+        const rx = Math.abs(pEdge.x - p.x), ry = Math.abs(pEdge.y - p.y);
+        if (rx < 4 || ry < 4) continue;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        if (z.angle) ctx.rotate(z.angle);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fillStyle = isTerrainMode ? 'rgba(71, 85, 105, 0.65)' : 'rgba(51, 65, 85, 0.45)';
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
   private _drawRivers(): void {
-    if (this.scale < 1.3) return;
     const ctx = this.ctx!;
     ctx.save();
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-    ctx.lineWidth = Math.min(2.2, 0.7 + this.scale * 0.25);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (const r of WORLD_RIVERS) {
       if (r.points.length < 2) continue;
+      const pts = r.points.map(([lat, lng]) => this.worldToScreen(lat, lng));
+
+      // 1. Русло и тёмный берег (контраст на фоне суши и границ)
       ctx.beginPath();
-      const f = this.worldToScreen(r.points[0]![0], r.points[0]![1]);
-      ctx.moveTo(f.x, f.y);
-      for (let i = 1; i < r.points.length; i++) {
-        const pt = this.worldToScreen(r.points[i]![0], r.points[i]![1]);
-        ctx.lineTo(pt.x, pt.y);
-      }
+      ctx.moveTo(pts[0]!.x, pts[0]!.y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.45)';
+      ctx.lineWidth = Math.min(3.8, 1.4 + this.scale * 0.65);
       ctx.stroke();
+
+      // 2. Водная гладь реки (светло-голубой чистый цвет)
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
+      ctx.lineWidth = Math.min(2.6, 0.8 + this.scale * 0.35);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  private _drawTerrainLabels(): void {
+    const isTerrain = this.mapMode === 'terrain';
+    if (!isTerrain && this.scale < 1.35) return;
+    if (isTerrain && this.scale < 0.9) return;
+    const ctx = this.ctx!;
+    ctx.save();
+    ctx.font = 'italic 700 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = isTerrain ? 'rgba(241, 245, 249, 0.85)' : 'rgba(255, 255, 255, 0.72)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowBlur = 4;
+
+    const majorRanges = [
+      'Альпы', 'Карпаты', 'Кавказ', 'Пиренеи', 'Урал', 'Гималаи и Каракорум',
+      'Скалистые горы', 'Анды', 'Атласские горы', 'Скандинавские горы', 'Сахара', 'Сибирская тайга'
+    ];
+
+    for (const z of TERRAIN_ZONES) {
+      if (!majorRanges.includes(z.name)) continue;
+      const p = this.worldToScreen(z.lat, z.lng);
+      if (p.x < -40 || p.x > this.canvas!.width + 40 || p.y < -40 || p.y > this.canvas!.height + 40) continue;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      if (z.angle) ctx.rotate(z.angle * 0.6);
+      // Картографическое разряженное написание
+      const spaced = z.name.split('').join(' ').toUpperCase();
+      ctx.fillText(spaced, 0, 0);
+      ctx.restore();
     }
     ctx.restore();
   }

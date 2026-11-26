@@ -269,6 +269,7 @@ export class UISystem implements IGameSystem {
     document.getElementById('game-container')!.appendChild(bar);
     const modes: { id: MapMode; icon: string; label: string }[] = [
       { id: 'political', icon: Icons.diplomacy(13), label: 'Политическая' },
+      { id: 'terrain', icon: Icons.mountain(13), label: 'Рельеф' },
       { id: 'diplomacy', icon: Icons.handshake(13), label: 'Дипломатия' },
       { id: 'economy', icon: Icons.economy(13), label: 'Экономика' },
       { id: 'military', icon: Icons.army(13), label: 'Армия' },
@@ -327,6 +328,14 @@ export class UISystem implements IGameSystem {
     eventBus.on(GameEvents.TIME_SPEED_CHANGED, () => this._updateSpeedUI());
     eventBus.on(GameEvents.TIME_PAUSED, () => this._updateSpeedUI());
     eventBus.on(GameEvents.TIME_RESUMED, () => this._updateSpeedUI());
+    eventBus.on(GameEvents.GAME_LOADED, () => {
+      this.hideMainMenu();
+      this._updateSpeedUI();
+      this._refreshTopBar();
+      this._refreshActivePanel();
+      this._refreshNewsList();
+      this._refreshEventList();
+    });
     eventBus.on(GameEvents.COUNTRY_SELECTED, () => {
       this._refreshTopBar();
       this.openPanel(this.activePanel ?? 'politics');

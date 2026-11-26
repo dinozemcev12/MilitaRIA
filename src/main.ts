@@ -50,6 +50,7 @@ async function main(): Promise<void> {
         break;
       case 'Digit1': gameTime.setSpeed(1); break;
       case 'Digit2': gameTime.setSpeed(2); break;
+      case 'Digit3': gameTime.setSpeed(4); break;
       case 'Digit4': gameTime.setSpeed(4); break;
       case 'Digit5': gameTime.setSpeed(8); break;
       case 'KeyF5':
