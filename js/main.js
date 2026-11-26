@@ -88,5 +88,12 @@
     state.addLog('Инициализация завершена. Игра готова.');
     ui.update(state);
     ui.setSpeedButtons(state.speed);
+
+    // Скрыть экран загрузки, показать игру
+    var loading = document.getElementById('loading-overlay');
+    var container = document.getElementById('game-container');
+    if (loading) loading.style.display = 'none';
+    if (container) container.classList.remove('hidden');
+
     requestAnimationFrame(loop);
 })();
