@@ -148,6 +148,7 @@
     state.addLog('Инициализация завершена. Игра готова.');
     ui.update(state);
     ui.setSpeedButtons(state.speed);
+    ui.updateModule('politics', state);
 
     // Скрыть экран загрузки, показать игру
     var loading = document.getElementById('loading-overlay');
