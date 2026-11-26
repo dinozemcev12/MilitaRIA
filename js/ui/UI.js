@@ -79,31 +79,36 @@ var UI = (function() {
         });
     };
 
+    UI.prototype._set = function(el, text) {
+        if (el) el.textContent = text;
+    };
+
     UI.prototype.update = function(state) {
-        this.elements.date.textContent = state.getDateString();
+        this._set(this.elements.date, state.getDateString());
 
         var player = state.getPlayerCountry();
         if (player) {
-            this.elements.playerName.textContent = player.name;
-            this.elements.stability.textContent = player.getModifiedStability() + '%';
-            this.elements.gdp.textContent = player.getModifiedGDP() + ' млрд';
-            this.elements.pop.textContent = player.population.toLocaleString() + ' чел.';
-            this.elements.milBudget.textContent = player.militaryBudget + ' млрд';
+            this._set(this.elements.playerName, player.name);
+            this._set(this.elements.stability, player.getModifiedStability() + '%');
+            this._set(this.elements.gdp, player.getModifiedGDP() + ' млрд');
+            this._set(this.elements.pop, player.population.toLocaleString() + ' чел.');
+            this._set(this.elements.milBudget, player.militaryBudget + ' млрд');
 
-            this.elements.cardName.textContent = player.name;
-            this.elements.cardCapital.textContent = player.capital;
-            this.elements.cardPop.textContent = player.population.toLocaleString() + ' чел.';
-            this.elements.cardGdp.textContent = player.getModifiedGDP() + ' млрд';
-            this.elements.cardStab.textContent = player.getModifiedStability() + '%';
-            this.elements.cardTax.textContent = player.taxRate + '%';
-            this.elements.cardInfl.textContent = player.inflation.toFixed(1) + '%';
-            this.elements.cardUnemp.textContent = player.unemployment.toFixed(1) + '%';
-            this.elements.cardTreasury.textContent = player.treasury + ' млрд';
-            this.elements.cardDebt.textContent = player.debt + ' млрд';
-            this.elements.countryCard.style.display = 'block';
+            this._set(this.elements.cardName, player.name);
+            this._set(this.elements.cardCapital, player.capital);
+            this._set(this.elements.cardPop, player.population.toLocaleString() + ' чел.');
+            this._set(this.elements.cardGdp, player.getModifiedGDP() + ' млрд');
+            this._set(this.elements.cardStab, player.getModifiedStability() + '%');
+            this._set(this.elements.cardTax, player.taxRate + '%');
+            this._set(this.elements.cardInfl, player.inflation.toFixed(1) + '%');
+            this._set(this.elements.cardUnemp, player.unemployment.toFixed(1) + '%');
+            this._set(this.elements.cardTreasury, player.treasury + ' млрд');
+            this._set(this.elements.cardDebt, player.debt + ' млрд');
+
+            if (this.elements.countryCard) this.elements.countryCard.style.display = 'block';
         }
 
-        this.elements.speed.textContent = state.getSpeedLabel();
+        this._set(this.elements.speed, state.getSpeedLabel());
 
         this._renderNews(state.news);
         this._renderLog(state.eventLog);
@@ -127,7 +132,7 @@ var UI = (function() {
                 '% | Коррупция ' + player.corruption + '% | Избиратели в ' + player.electionYear;
         }
 
-        if (entry) {
+        if (entry && log) {
             log.textContent = entry + '\n' + (log.textContent || '').split('\n').slice(0, 7).join('\n');
         }
     };
