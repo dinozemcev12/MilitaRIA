@@ -272,7 +272,17 @@ const COUNTRIES_DATA = [
         region: 'Северная Америка', population: 11000000, gdp: 25, militaryBudget: 2, treasury: 2,
         ideology: 'communism', government: 'Социалистическая республика',
         stability: 55, corruption: 65, inflation: 5.0, unemployment: 6.0, techLevel: 50,
-        color: '#ef4444', flagColor: '#ef4444' }
+        color: '#ef4444', flagColor: '#ef4444' },
+    { tag: 'KAZ', name: 'Казахстан', nameEn: 'Kazakhstan', capital: 'Алматы', capitalProvince: 'pro_kaz_ala',
+        region: 'Евразия', population: 15000000, gdp: 35, militaryBudget: 1, treasury: 4,
+        ideology: 'republic', government: 'Республика',
+        stability: 60, corruption: 60, inflation: 12.0, unemployment: 7.0, techLevel: 50,
+        color: '#4ade80', flagColor: '#4ade80' },
+    { tag: 'NZL', name: 'Новая Зеландия', nameEn: 'New Zealand', capital: 'Веллингтон', capitalProvince: 'pro_nzl_wlg',
+        region: 'Океания', population: 4000000, gdp: 60, militaryBudget: 1, treasury: 5,
+        ideology: 'democracy', government: 'Конституционная монархия',
+        stability: 80, corruption: 10, inflation: 1.5, unemployment: 5.0, techLevel: 72,
+        color: '#3b82f6', flagColor: '#3b82f6' }
 ];
 
 // COUNTRIES_DATA is a global variable
