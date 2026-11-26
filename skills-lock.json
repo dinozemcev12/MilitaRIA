@@ -1,0 +1,180 @@
+{
+  "version": 2,
+  "skills": {
+    "afk": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/afk/SKILL.md",
+      "computedHash": "36877a032a45a6659b596031d530706c71bd062f294b8c106ad7b8b4570f542d"
+    },
+    "banner-design": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/banner-design/SKILL.md",
+      "computedHash": "4b22f6f48afc6fcd72e6f3ae106a4dca11b33b88221efded1f5c62d8f9afb50d"
+    },
+    "better-accessibility": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-accessibility/SKILL.md",
+      "computedHash": "1da0d428695e5bc317101ee09624fea07d56a72db6ca9eee9fe166b57de6c52d"
+    },
+    "better-colors": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-colors/SKILL.md",
+      "computedHash": "6bd97cb922230031c416da89e3e30f31856e7c397d4595c951cced9350a2e0c6"
+    },
+    "better-interface": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-interface/SKILL.md",
+      "computedHash": "42c3d2c444d69a03e6dda656da59e52c6cfafebbf322037b01dd56046e6adf24"
+    },
+    "better-layout": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-layout/SKILL.md",
+      "computedHash": "1c413249d35f92934698279de5de3759ed1a5ec9b8c02f96a972fb0ecb83a95f"
+    },
+    "better-motion": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-motion/SKILL.md",
+      "computedHash": "de38d38bc135d7b8a7a6ad3e146152e140a58954e7a1f50a39af63a95a382ce2"
+    },
+    "better-typography": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-typography/SKILL.md",
+      "computedHash": "4a1b00bc0f9c3c7a83f9cb94dfa67359bdd12e160afc3cd69a01c0c1f6d240ff"
+    },
+    "better-ui": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-ui/SKILL.md",
+      "computedHash": "e9e9bedb426428a6f9d86927b77f14b6acc3d348a7ec9552c071bc2bfb39ca65"
+    },
+    "better-writing": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/better-writing/SKILL.md",
+      "computedHash": "2a1272ec964d55720f0aa7b95bf198aa488099950f52f4dbd975906438b955af"
+    },
+    "brand": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/brand/SKILL.md",
+      "computedHash": "d5619310b76bd204efd2f8b3832f72b5a2899712be0ab94d1b4b671271419c54"
+    },
+    "break": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/break/SKILL.md",
+      "computedHash": "041fe26ec8552f3e9114fd21a006a91cc82f30fb7561694ab12601c0a8b42cc9"
+    },
+    "build-design": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/build-design/SKILL.md",
+      "computedHash": "78b640694e568d796dd9044256889d8b28853d98f3349dd08305ae9aeea4aaac"
+    },
+    "design": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/design/SKILL.md",
+      "computedHash": "a2f7099f032b21154931fcc624da494fdbe55d353c111dc9b257579822dd246b"
+    },
+    "design-motion-principles": {
+      "source": "kylezantos/design-motion-principles",
+      "commit": "4a9ca879f24a361f4dca4174fe2da0f67b5ddee3",
+      "sourceType": "github",
+      "skillPath": "skills/design-motion-principles/SKILL.md",
+      "computedHash": "afbcdb7fd0afa5cd5aaa43e4766e7326067f2ee45901e35aef912243259d0735"
+    },
+    "design-system": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/design-system/SKILL.md",
+      "computedHash": "9efdc106c73d8d298b5a90d55c56995840a37f754fb9d498d14e6562bdaadc23"
+    },
+    "design-taste-frontend": {
+      "source": "Leonxlnx/taste-skill",
+      "commit": "d1a2bb41d927083ac7118f60cfc9cdf711810ea0",
+      "sourceType": "github",
+      "skillPath": "skills/taste-skill/SKILL.md",
+      "computedHash": "b10eab0a9684cd09cf34c31ef04a3bf530a5f4404422f9c520d42372d670c7fc"
+    },
+    "explain-interface": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/explain-interface/SKILL.md",
+      "computedHash": "21ac62910306392f1ba935a1fd1d80dfd87e4ba0d83fefcfc3206043fd8d2c2e"
+    },
+    "interface-review": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/interface-review/SKILL.md",
+      "computedHash": "77008a18d758ea6f18f72f650b3dde6f71522bedfa349d25d548ed5f0b9c3e5a"
+    },
+    "slides": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/slides/SKILL.md",
+      "computedHash": "059825b15a508a5f1533ab646f968ffcbcdbb8eadd76c2d122151bfbcf19d287"
+    },
+    "state-machine": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/state-machine/SKILL.md",
+      "computedHash": "36cc762e0b394918deb6785ece94a416996194f1c51df785ccea978fd6321625"
+    },
+    "ui-styling": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-styling/SKILL.md",
+      "computedHash": "38b45ce4f84d3711ec6a050361e0b8ba19b9b14b0c0f351b207d88c1e820c922"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "3442615dcc7dcb3f70a1c9f69d5c287f37db023e",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "5481f0c38e5591029134f06418ce04754d8ee3b67d40cc986c5609d3dad5b1b6"
+    },
+    "upskill": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/upskill/SKILL.md",
+      "computedHash": "4fbebf3823e52e1515645f560cad8ed16e3ad63fd8c741d771f1c5851f497cf7"
+    },
+    "variant": {
+      "source": "jakubkrehel/skills",
+      "commit": "672ae44ace6aaed65b86cbb1e2fd6fbea0e79578",
+      "sourceType": "github",
+      "skillPath": "skills/variant/SKILL.md",
+      "computedHash": "9e37b7199cbb585cf6019cd66ee4dfa4abcf5ce27948fe0ccdcc98ca3705fa38"
+    }
+  }
+}
