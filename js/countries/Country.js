@@ -24,6 +24,13 @@ var Country = (function() {
         this.color = data.color || '#6b7280';
         this.flagColor = data.flagColor || '#4a5a70';
 
+        this.taxRate = data.taxRate !== undefined ? data.taxRate : 25;      // налоговая ставка %
+        this.politicalStability = data.politicalStability !== undefined ? data.politicalStability : 70;
+        this.electionYear = data.electionYear || 2004;                      // год следующих выборов
+        this.parties = data.parties || [];                                  // [{name, ideology, support}]
+        this.ministers = data.ministers || {};                              // {economy, defense, foreign, interior}
+        this.laws = data.laws || [];                                        // принятые законы/реформы
+
         this.relations = new Map();
         this.allies = new Set();
         this.enemies = new Set();

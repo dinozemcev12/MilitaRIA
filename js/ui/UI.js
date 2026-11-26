@@ -85,7 +85,7 @@ var UI = (function() {
         var player = state.getPlayerCountry();
         if (player) {
             this.elements.playerName.textContent = player.name;
-            this.elements.stability.textContent = state.getPlayerCountry().getModifiedStability() + '%';
+            this.elements.stability.textContent = player.getModifiedStability() + '%';
             this.elements.gdp.textContent = player.getModifiedGDP() + ' млрд';
             this.elements.pop.textContent = player.population.toLocaleString() + ' чел.';
             this.elements.milBudget.textContent = player.militaryBudget + ' млрд';
@@ -95,6 +95,11 @@ var UI = (function() {
             this.elements.cardPop.textContent = player.population.toLocaleString() + ' чел.';
             this.elements.cardGdp.textContent = player.getModifiedGDP() + ' млрд';
             this.elements.cardStab.textContent = player.getModifiedStability() + '%';
+            this.elements.cardTax.textContent = player.taxRate + '%';
+            this.elements.cardInfl.textContent = player.inflation.toFixed(1) + '%';
+            this.elements.cardUnemp.textContent = player.unemployment.toFixed(1) + '%';
+            this.elements.cardTreasury.textContent = player.treasury + ' млрд';
+            this.elements.cardDebt.textContent = player.debt + ' млрд';
             this.elements.countryCard.style.display = 'block';
         }
 
@@ -102,6 +107,29 @@ var UI = (function() {
 
         this._renderNews(state.news);
         this._renderLog(state.eventLog);
+    };
+
+    UI.prototype.updateModule = function(moduleName, state) {
+        var player = state.getPlayerCountry();
+        if (!player) return;
+        var log = this.elements.eventLog;
+        var entry = '';
+
+        if (moduleName === 'economy') {
+            entry = 'ЭКОНОМИКА ' + player.name + ': ВВП ' + player.getModifiedGDP().toFixed(0) +
+                ' млрд | Налоги ' + player.taxRate + '% | Казна ' + player.treasury.toFixed(0) +
+                ' млрд | Долг ' + player.debt.toFixed(0) + ' млрд | Инфляция ' +
+                player.inflation.toFixed(1) + '% | Безработица ' + player.unemployment.toFixed(1) + '%';
+        } else if (moduleName === 'politics') {
+            var gov = player.government || 'Республика';
+            var stab = player.getModifiedStability();
+            entry = 'ПОЛИТИКА ' + player.name + ': ' + gov + ' | Стабильность ' + stab +
+                '% | Коррупция ' + player.corruption + '% | Избиратели в ' + player.electionYear;
+        }
+
+        if (entry) {
+            log.textContent = entry + '\n' + (log.textContent || '').split('\n').slice(0, 7).join('\n');
+        }
     };
 
     UI.prototype._renderNews = function(news) {

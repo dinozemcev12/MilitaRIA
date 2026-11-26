@@ -1,5 +1,7 @@
 /**
- * main.js — точка входа MilitaRIA (Этап 1).
+ * main.js — точка входа MilitaRIA (Этап 2).
+ * Собирает модули, инициализирует состояние, запускает игровой цикл.
+ * Экономика и политика считаются каждый игровой день для игрока.
  */
 (function() {
     // Экспонируем глобально для модулей
@@ -33,6 +35,8 @@
     // --- Модули ---
     var gameMap = new GameMap('map-canvas-container');
     var ui = new UI();
+    var economy = new Economy();
+    var politics = new Politics();
 
     // Скорость времени
     var speedBtns = document.querySelectorAll('.speed-btn');
@@ -63,6 +67,22 @@
         }
     });
 
+    // Смена модуля в левой панели
+    window.addEventListener('ui:moduleSelected', function(e) {
+        ui.updateModule(e.detail.module, state);
+    });
+
+    // Сохранить / загрузить / меню (заглушки Этапа 2)
+    window.addEventListener('ui:save', function() {
+        state.addLog('Сохранение: функция будет реализована на Этапе 8.');
+    });
+    window.addEventListener('ui:load', function() {
+        state.addLog('Загрузка: функция будет реализована на Этапе 8.');
+    });
+    window.addEventListener('ui:menu', function() {
+        state.addLog('Открыто главное меню.');
+    });
+
     // Игровой цикл
     var lastTime = 0;
 
@@ -76,6 +96,18 @@
             if (state.dayTicks >= dayMs) {
                 state.dayTicks = 0;
                 state.date.setDate(state.date.getDate() + 1);
+
+                // === ЭКОНОМИКА: расчёт каждый день для игрока ===
+                var player = state.getPlayerCountry();
+                if (player) {
+                    economy.calculate(player);
+
+                    // === ПОЛИТИКА: выборы раз в 4 года (1 января) ===
+                    if (state.date.getDate() === 1 && state.date.getMonth() === 0) {
+                        politics.checkElection(player, state.date.getFullYear());
+                    }
+                }
+
                 ui.update(state);
             }
         }
