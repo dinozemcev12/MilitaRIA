@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MilitaRIA — Grand Strategy & Real-Time Tactical Warfare</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">ИНИЦИАЛИЗАЦИЯ МИЛИТАРИА...</div>
+        <div class="loading-progress"><div class="loading-bar"></div></div>
+    </div>
+
+    <div id="game-container" class="hidden">
+        <div id="top-panel" class="panel top-panel">
+            <div class="top-section left-section">
+                <div id="game-date" class="top-item">1 января 2000</div>
+                <div class="top-separator"></div>
+                <div id="player-country" class="top-item country-selector">
+                    <span class="country-flag"></span>
+                    <span class="country-name">США</span>
+                    <span class="chevron">▼</span>
+                </div>
+            </div>
+            <div class="top-section center-section">
+                <div class="top-stat" id="top-stability"><span class="stat-label">СТАБИЛЬНОСТЬ</span><span class="stat-value" id="val-stability">—</span></div>
+                <div class="top-stat" id="top-gdp"><span class="stat-label">ВВП</span><span class="stat-value" id="val-gdp">—</span></div>
+                <div class="top-stat" id="top-pop"><span class="stat-label">НАСЕЛЕНИЕ</span><span class="stat-value" id="val-pop">—</span></div>
+                <div class="top-stat" id="top-milbudget"><span class="stat-label">ВОЕННЫЙ БЮДЖЕТ</span><span class="stat-value" id="val-milbudget">—</span></div>
+            </div>
+            <div class="top-section right-section">
+                <div id="speed-controls" class="speed-group">
+                    <button class="speed-btn active" data-speed="0">||</button>
+                    <button class="speed-btn" data-speed="1">x1</button>
+                    <button class="speed-btn" data-speed="2">x2</button>
+                    <button class="speed-btn" data-speed="4">x4</button>
+                    <button class="speed-btn" data-speed="8">x8</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="main-area" class="main-area">
+            <div id="left-panel" class="panel left-panel collapsed">
+                <div class="panel-header">
+                    <span class="panel-title">УПРАВЛЕНИЕ</span>
+                    <button class="toggle-btn" data-panel="left">▶</button>
+                </div>
+                <div class="panel-content">
+                    <nav class="module-nav">
+                        <button class="nav-btn active" data-module="politics">Политика</button>
+                        <button class="nav-btn" data-module="economy">Экономика</button>
+                        <button class="nav-btn" data-module="diplomacy">Дипломатия</button>
+                        <button class="nav-btn" data-module="army">Армия</button>
+                        <button class="nav-btn" data-module="research">Исследования</button>
+                        <button class="nav-btn" data-module="production">Производство</button>
+                        <button class="nav-btn" data-module="intel">Разведка</button>
+                    </nav>
+                </div>
+            </div>
+
+            <div id="map-viewport" class="map-viewport">
+                <div id="map-canvas-container"></div>
+                <div id="map-overlay" class="map-overlay"></div>
+            </div>
+
+            <div id="right-panel" class="panel right-panel">
+                <div class="panel-header">
+                    <span class="panel-title">НОВОСТИ И СОБЫТИЯ</span>
+                    <button class="toggle-btn" data-panel="right">◀</button>
+                </div>
+                <div class="panel-content">
+                    <div class="news-list" id="news-list">
+                        <div class="news-item">
+                            <div class="news-time">01.01.2000</div>
+                            <div class="news-title">Начало кампании</div>
+                            <div class="news-text">Игровой мир инициализирован. Все государства готовы к управлению.</div>
+                        </div>
+                    </div>
+                    <div class="divider"></div>
+                    <div class="country-info-card" id="country-info-card" style="display:none;">
+                        <div class="card-title" id="card-country-name">США</div>
+                        <div class="card-stats">
+                            <div><span class="stat-name">Столица:</span> <span class="stat-val" id="card-capital">Вашингтон</span></div>
+                            <div><span class="stat-name">Население:</span> <span class="stat-val" id="card-pop">—</span></div>
+                            <div><span class="stat-name">ВВП:</span> <span class="stat-val" id="card-gdp">—</span></div>
+                            <div><span class="stat-name">Стабильность:</span> <span class="stat-val" id="card-stab">—</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="bottom-panel" class="panel bottom-panel">
+            <div class="bottom-left">
+                <span id="bottom-game-speed">Пауза</span>
+            </div>
+            <div class="bottom-center">
+                <div id="event-log" class="event-log">Журнал событий пуст.</div>
+            </div>
+            <div class="bottom-right">
+                <button id="btn-save">Сохранить</button>
+                <button id="btn-load">Загрузить</button>
+                <button id="btn-menu">Меню</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="country-picker" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">ВЫБОР ГОСУДАРСТВА</div>
+            <div class="modal-body" id="country-list"></div>
+            <div class="modal-footer">
+                <button id="btn-pick-close">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/core/EventBus.js"></script>
+    <script src="js/core/State.js"></script>
+    <script src="js/core/Game.js"></script>
+    <script src="js/data/countries.js"></script>
+    <script src="js/map/Map.js"></script>
+    <script src="js/ui/UI.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
