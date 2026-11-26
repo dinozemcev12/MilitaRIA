@@ -1,7 +1,7 @@
 /**
- * main.js — точка входа MilitaRIA (Этап 2).
+ * main.js — точка входа MilitaRIA (Этап 3).
  * Собирает модули, инициализирует состояние, запускает игровой цикл.
- * Экономика и политика считаются каждый игровой день для игрока.
+ * Экономика, политика, дипломатия и ИИ считаются каждый игровой день/тикт.
  */
 (function() {
     // Экспонируем глобально для модулей
@@ -21,7 +21,8 @@
         ['CHN', 'PRK', 70], ['CHN', 'PAK', 65],
         ['IND', 'PAK', -50], ['IND', 'CHN', -30],
         ['IRN', 'IRQ', 20], ['IRN', 'ISR', -70],
-        ['ISR', 'SAU', -40], ['IND', 'USA', 45]
+        ['ISR', 'SAU', -40], ['IND', 'USA', 45],
+        ['GBR', 'USA', 75], ['FRA', 'USA', 70], ['DEU', 'USA', 70]
     ];
     relationPresets.forEach(function(rel) {
         var ca = state.countries.get(rel[0]);
@@ -37,6 +38,8 @@
     var ui = new UI();
     var economy = new Economy();
     var politics = new Politics();
+    var diplomacy = new Diplomacy();
+    var ai = new AISystem();
 
     // Скорость времени
     var speedBtns = document.querySelectorAll('.speed-btn');
@@ -72,7 +75,7 @@
         ui.updateModule(e.detail.module, state);
     });
 
-    // Сохранить / загрузить / меню (заглушки Этапа 2)
+    // Сохранить / загрузить / меню (заглушки Этапа 8)
     window.addEventListener('ui:save', function() {
         state.addLog('Сохранение: функция будет реализована на Этапе 8.');
     });
@@ -81,6 +84,26 @@
     });
     window.addEventListener('ui:menu', function() {
         state.addLog('Открыто главное меню.');
+    });
+
+    // События дипломатии -> лог
+    eventBus.on('diplomacy:warDeclared', function(d) {
+        state.addLog('ВОЙНА: ' + d.attacker + ' → ' + d.defender + ' (' + d.date + ')');
+    });
+    eventBus.on('diplomacy:peaceMade', function(d) {
+        state.addLog('МИР: ' + d.tagA + ' ↔ ' + d.tagB + ' (' + d.date + ')');
+    });
+    eventBus.on('diplomacy:allianceFormed', function(d) {
+        state.addLog('СОЮЗ: ' + d.tagA + ' ↔ ' + d.tagB + ' (' + d.date + ')');
+    });
+    eventBus.on('diplomacy:allianceBroken', function(d) {
+        state.addLog('СОЮЗ РАЗОРВАН: ' + d.tagA + ' ↔ ' + d.tagB);
+    });
+    eventBus.on('diplomacy:tradeAgreement', function(d) {
+        state.addLog('ТОРГОВЛЯ: ' + d.tagA + ' ↔ ' + d.tagB + ' подписали соглашение');
+    });
+    eventBus.on('diplomacy:sanctions', function(d) {
+        state.addLog('САНКЦИИ: ' + d.tagA + ' против ' + d.tagB);
     });
 
     // Игровой цикл
@@ -97,16 +120,21 @@
                 state.dayTicks = 0;
                 state.date.setDate(state.date.getDate() + 1);
 
-                // === ЭКОНОМИКА: расчёт каждый день для игрока ===
+                // === ЭКОНОМИКА для игрока ===
                 var player = state.getPlayerCountry();
                 if (player) {
                     economy.calculate(player);
 
-                    // === ПОЛИТИКА: выборы раз в 4 года (1 января) ===
+                    // === ПОЛИТИКА: выборы 1 января ===
                     if (state.date.getDate() === 1 && state.date.getMonth() === 0) {
                         politics.checkElection(player, state.date.getFullYear());
                     }
                 }
+
+                // === ИИ + дипломатия для всех стран (игрок пропускается внутри ai.update) ===
+                state.countries.forEach(function(country) {
+                    ai.update(state, country, diplomacy);
+                });
 
                 ui.update(state);
             }
