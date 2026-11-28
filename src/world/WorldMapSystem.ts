@@ -293,7 +293,7 @@ export class WorldMapSystem implements IGameSystem {
         }
       }
 
-      // 2. Клик по юниту игрока — просто выделяем
+      // 2. Клик по юниту игрока — просто выделяем (без приказа перемещения)
       if (player) {
         for (const u of militarySystem.getUnitsByCountry(player.code)) {
           const p = this.worldToScreen(u.lat, u.lng);
@@ -313,7 +313,7 @@ export class WorldMapSystem implements IGameSystem {
       this.inspectCountry(code);
     });
 
-    // ПКМ — контекстное меню армии или страны
+    // ПКМ — приказ перемещения или контекстное меню
     c.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const rect = c.getBoundingClientRect();
@@ -321,33 +321,42 @@ export class WorldMapSystem implements IGameSystem {
       const sy = e.clientY - rect.top;
       const { lat, lng } = this.screenToWorld(sx, sy);
       const player = countrySystem.getPlayer();
+      const selected = this.selectedUnitId ? militarySystem.getUnit(this.selectedUnitId) : null;
 
-      // Сначала проверяем клик по своему юниту
-      if (player) {
-        for (const u of militarySystem.getUnitsByCountry(player.code)) {
-          const p = this.worldToScreen(u.lat, u.lng);
-          if (Math.hypot(p.x - sx, p.y - sy) < 14) {
-            this.selectedUnitId = u.id;
-            eventBus.emit(GameEvents.CONTEXT_MENU_REQUEST, {
-              target: 'unit',
-              unitId: u.id,
-              x: e.clientX,
-              y: e.clientY
-            });
-            this._render();
-            return;
-          }
+      // Если клик по своему юниту — контекстное меню со стойками
+      if (player && selected) {
+        const sp = this.worldToScreen(selected.lat, selected.lng);
+        if (Math.hypot(sp.x - sx, sp.y - sy) < 14) {
+          eventBus.emit(GameEvents.CONTEXT_MENU_REQUEST, {
+            target: 'unit',
+            unitId: selected.id,
+            x: e.clientX,
+            y: e.clientY
+          });
+          this._render();
+          return;
         }
       }
 
-      // Проверяем клик по стране
-      const code = this._pickCountry(lat, lng);
-      eventBus.emit(GameEvents.CONTEXT_MENU_REQUEST, {
-        target: 'country',
-        countryCode: code ?? undefined,
-        x: e.clientX,
-        y: e.clientY
-      });
+      // Если клик по чужой стране — контекстное меню дипломатии
+      if (player) {
+        const code = this._pickCountry(lat, lng);
+        if (code && code !== player.code) {
+          eventBus.emit(GameEvents.CONTEXT_MENU_REQUEST, {
+            target: 'country',
+            countryCode: code,
+            x: e.clientX,
+            y: e.clientY
+          });
+          return;
+        }
+      }
+
+      // Иначе — приказ перемещения выделенного юнита на пустое место
+      if (selected) {
+        militarySystem.orderMove(selected.id, lat, lng);
+        this._render();
+      }
     });
   }
 
