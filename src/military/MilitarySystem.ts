@@ -391,6 +391,14 @@ export class MilitarySystem implements IGameSystem {
     return true;
   }
 
+  stopUnit(unitId: string): boolean {
+    const u = this.units.get(unitId);
+    if (!u) return false;
+    u.targetLat = undefined;
+    u.targetLng = undefined;
+    return true;
+  }
+
   moveUnit(unitId: string, lat: number, lng: number): boolean {
     return this.orderMove(unitId, lat, lng);
   }

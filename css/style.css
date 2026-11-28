@@ -1157,3 +1157,104 @@ html, body {
 #tactical-overlay.hidden { display: none; }
 
 #country-panel { display: none; }
+
+/* ============================================================ FLOATING UNIT HUD */
+#unit-hud {
+  position: fixed;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  min-width: 390px;
+  max-width: 620px;
+  background: rgba(13, 17, 23, 0.94);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  z-index: 900;
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+}
+#unit-hud.hidden { display: none; }
+.uh-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.uh-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.uh-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(251, 192, 45, 0.14);
+  color: #fde047;
+  border: 1px solid rgba(251, 192, 45, 0.35);
+}
+.uh-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  border-radius: 4px;
+}
+.uh-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.uh-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.uh-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.uh-stat span { color: var(--text-muted); font-size: 10px; }
+.uh-stat b { color: var(--text-primary); font-size: 12px; }
+.uh-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.uh-chip {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.uh-chip:hover { border-color: #fbc02d; color: #fde047; }
+.uh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+.uh-select {
+  max-width: 170px;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.uh-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}

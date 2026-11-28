@@ -152,6 +152,11 @@ export class UISystem implements IGameSystem {
     tac.id = 'tactical-overlay';
     tac.className = 'hidden';
     document.body.appendChild(tac);
+
+    const unitHud = document.createElement('div');
+    unitHud.id = 'unit-hud';
+    unitHud.className = 'hidden';
+    document.getElementById('ui-layer')?.appendChild(unitHud);
   }
 
   /* ================================================================
@@ -382,7 +387,7 @@ export class UISystem implements IGameSystem {
       const atk = countrySystem.getCountry(b.attackerCode);
       const def = countrySystem.getCountry(b.defenderCode);
       if (p && (b.attackerCode === p.code || b.defenderCode === p.code)) {
-        this.showNotification(`⚔️ Началось сражение: ${atk?.nameRu ?? b.attackerCode} vs ${def?.nameRu ?? b.defenderCode}! Нажмите на маркер ⚔ на карте для 3D-тактики.`, 'danger');
+        this.showNotification(`⚔️ Началось сражение: ${atk?.nameRu ?? b.attackerCode} vs ${def?.nameRu ?? b.defenderCode}!`, 'danger');
         this.addNews({
           id: `bat_${Date.now()}`,
           date: gameTime.formatDate('long'),
@@ -473,7 +478,16 @@ export class UISystem implements IGameSystem {
       if (d.code) this._showCountryInfo(d.code);
     });
     eventBus.on(GameEvents.TACTICAL_UNIT_SELECTED, (d: any) => {
-      this._showUnitInfo(d.unitId);
+      const ids: string[] = Array.isArray(d?.unitIds)
+        ? d.unitIds
+        : d?.unitId
+          ? [d.unitId]
+          : [];
+      if (ids.length > 0) {
+        this._showUnitHud(ids);
+      } else {
+        this._hideUnitHud();
+      }
     });
   }
 
@@ -804,14 +818,9 @@ export class UISystem implements IGameSystem {
       return `<button class="btn-recruit" data-type="${type}">${this._unitTypeIcon(type)} ${meta.label} (${meta.cost} млрд)</button>`;
     }).join('');
 
-    const warEnemy = c.warWith[0];
-    const tacBtn = warEnemy
-      ? `<button class="btn-action primary" id="btn-tactical-battle">${Icons.crosshair(14)} Вступить в тактический бой (${countrySystem.getCountry(warEnemy)?.nameRu ?? warEnemy})</button>`
-      : '';
-
     return `
-      ${tacBtn ? `<div class="panel-section">${tacBtn}</div>` : ''}
       <div class="panel-section">
+        <div class="info-box" style="margin-bottom:8px">ЛКМ по фишке — выбрать дивизию • Shift+ЛКМ / рамка — несколько • ПКМ — движение</div>
         <div class="psec-title">Боевые единицы (${units.length})</div>
         <div id="unit-list">${unitsHtml}</div>
       </div>
@@ -1101,30 +1110,19 @@ export class UISystem implements IGameSystem {
     }
 
     if (panelId === 'army') {
-      document.getElementById('btn-tactical-battle')?.addEventListener('click', () => {
-        const enemyCode = c.warWith[0];
-        if (!enemyCode) return;
-        const atk = militarySystem.getUnitsByCountry(c.code).map(u => u.id);
-        const def = militarySystem.getUnitsByCountry(enemyCode).map(u => u.id);
-        if (!atk.length || !def.length) {
-          this.showNotification('Нет доступных подразделений для боя.', 'warn');
-          return;
-        }
-        tacticalSystem.enterBattle(`battle_${Date.now()}`, atk, def);
-      });
       document.querySelectorAll<HTMLButtonElement>('[data-uid]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const uid = btn.dataset.uid!;
-          worldMapSystem.setSelectedUnit(uid);
-          this._showUnitInfo(uid);
+          worldMapSystem.focusUnit(uid);
+          this._showUnitHud([uid]);
         });
       });
       document.querySelectorAll<HTMLDivElement>('.unit-row').forEach(row => {
         row.addEventListener('click', () => {
           const uid = row.dataset.uid!;
           worldMapSystem.setSelectedUnit(uid);
-          this._showUnitInfo(uid);
+          this._showUnitHud([uid]);
         });
       });
       document.querySelectorAll<HTMLButtonElement>('.btn-recruit').forEach(btn => {
@@ -1356,61 +1354,128 @@ export class UISystem implements IGameSystem {
     }, 30);
   }
 
-  private _showUnitInfo(unitId: string): void {
-    const u = militarySystem.getUnit(unitId);
-    if (!u) return;
-    const c = countrySystem.getPlayer();
-    const isPlayerUnit = u.countryCode === c?.code;
-    const echLabel = ECHELON_META[u.echelon ?? 'battalion'].label;
-    const cmdOpts = Object.keys(COMMANDER_TRAITS).map(k =>
-      `<option value="${k}" ${u.commander === k ? 'selected' : ''}>${k} (${COMMANDER_TRAITS[k]!.label})</option>`
-    ).join('');
+  private _hideUnitHud(): void {
+    const hud = document.getElementById('unit-hud');
+    if (hud) {
+      hud.classList.add('hidden');
+      hud.innerHTML = '';
+    }
+  }
 
-    this._showModal(`${Icons.shield(15)} ${u.name}`, `
-      <div class="unit-modal">
-        <div class="kv-row"><span class="kv-k">Тип</span><span class="kv-v">${UNIT_META[u.type]?.label ?? u.type}</span></div>
-        <div class="kv-row"><span class="kv-k">Формирование</span><span class="kv-v">${echLabel}</span></div>
-        <div class="kv-row"><span class="kv-k">Командир</span><span class="kv-v">${u.commander ?? 'Не назначен'}</span></div>
-        <div class="kv-row"><span class="kv-k">Сила</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.strength/10}%;background:var(--accent-text)"></div><span>${u.strength}/1000</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Мораль</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.morale*100}%;background:${u.morale>0.6?'var(--status-pos)':'var(--status-danger)'}"></div><span>${Math.round(u.morale*100)}%</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Снабжение</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.supply*100}%;background:var(--status-warn)"></div><span>${Math.round(u.supply*100)}%</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Опыт</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.experience*100}%;background:var(--accent-solid)"></div><span>${Math.round(u.experience*100)}%</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Позиция</span><span class="kv-v">${u.lat.toFixed(1)}°N, ${u.lng.toFixed(1)}°E</span></div>
-        ${isPlayerUnit ? `
-          <div style="margin-top:10px;display:flex;gap:6px;flex-direction:column">
-            <button class="btn-sm" id="btn-unit-promote">Укрупнить соединение (следующий эшелон)</button>
-            <div style="display:flex;gap:6px">
-              <select id="sel-unit-cmd" class="menu-select" style="flex:1">${cmdOpts}</select>
-              <button class="btn-sm" id="btn-unit-cmd">Назначить</button>
-            </div>
-            <div class="info-box">ПКМ на карте — отдать приказ на перемещение</div>
+  private _showUnitHud(unitIds: string[]): void {
+    const hud = document.getElementById('unit-hud');
+    if (!hud) return;
+    const units = unitIds
+      .map(id => militarySystem.getUnit(id))
+      .filter((u): u is NonNullable<typeof u> => Boolean(u && u.strength > 0));
+    if (units.length === 0) {
+      this._hideUnitHud();
+      return;
+    }
+
+    const player = countrySystem.getPlayer();
+    const isPlayerGroup = units.every(u => u.countryCode === player?.code);
+
+    if (units.length === 1) {
+      const u = units[0]!;
+      const echLabel = ECHELON_META[u.echelon ?? 'battalion'].label;
+      const moving = u.targetLat !== undefined && u.targetLng !== undefined;
+      const cmdOpts = Object.keys(COMMANDER_TRAITS).map(k =>
+        `<option value="${k}" ${u.commander === k ? 'selected' : ''}>${k} (${COMMANDER_TRAITS[k]!.label})</option>`
+      ).join('');
+
+      hud.classList.remove('hidden');
+      hud.innerHTML = `
+        <div class="uh-head">
+          <div class="uh-title">${Icons.shield(14)} <span>${u.name}</span> <span class="uh-badge">${echLabel}</span></div>
+          <button class="uh-close" id="uh-close" aria-label="Снять выделение">${Icons.close(14)}</button>
+        </div>
+        <div class="uh-stats">
+          <div class="uh-stat"><span>Сила</span><b>${Math.round(u.strength)}/1000</b></div>
+          <div class="uh-stat"><span>Мораль</span><b>${Math.round(u.morale * 100)}%</b></div>
+          <div class="uh-stat"><span>Снабж.</span><b>${Math.round(u.supply * 100)}%</b></div>
+          <div class="uh-stat"><span>Опыт</span><b>${Math.round(u.experience * 100)}%</b></div>
+          <div class="uh-stat"><span>Статус</span><b>${moving ? 'В пути' : 'На позиции'}</b></div>
+        </div>
+        ${isPlayerGroup ? `
+          <div class="uh-actions">
+            <button class="btn-sm" id="btn-unit-promote">Укрупнить</button>
+            ${moving ? '<button class="btn-sm" id="btn-unit-stop">Стоп</button>' : ''}
+            <select id="sel-unit-cmd" class="menu-select uh-select">${cmdOpts}</select>
+            <button class="btn-sm" id="btn-unit-cmd">Командир</button>
+            <span class="uh-hint">ПКМ — движение • Shift+ЛКМ — группа</span>
           </div>
         ` : ''}
-      </div>
-    `);
-    if (isPlayerUnit) {
-      document.getElementById('btn-unit-promote')?.addEventListener('click', () => {
-        const res = militarySystem.promoteUnit(u.id);
-        this.showNotification(res.ok ? `Соединение укрупнено: ${ECHELON_META[res.echelon!].label}` : (res.reason ?? 'Ошибка'), res.ok ? 'success' : 'danger');
-        if (res.ok) { this._showUnitInfo(u.id); this._refreshActivePanel(); }
+      `;
+
+      document.getElementById('uh-close')?.addEventListener('click', () => {
+        worldMapSystem.setSelectedUnit(null);
+        this._hideUnitHud();
       });
-      document.getElementById('btn-unit-cmd')?.addEventListener('click', () => {
-        const sel = document.getElementById('sel-unit-cmd') as HTMLSelectElement | null;
-        if (sel?.value) {
-          militarySystem.assignCommander(u.id, sel.value);
-          this.showNotification('Командир назначен.', 'success');
-          this._showUnitInfo(u.id);
-        }
-      });
+      if (isPlayerGroup) {
+        document.getElementById('btn-unit-promote')?.addEventListener('click', () => {
+          const res = militarySystem.promoteUnit(u.id);
+          this.showNotification(res.ok ? `Соединение укрупнено: ${ECHELON_META[res.echelon!].label}` : (res.reason ?? 'Ошибка'), res.ok ? 'success' : 'danger');
+          if (res.ok) { this._showUnitHud([u.id]); this._refreshActivePanel(); }
+        });
+        document.getElementById('btn-unit-stop')?.addEventListener('click', () => {
+          militarySystem.stopUnit(u.id);
+          this._showUnitHud([u.id]);
+        });
+        document.getElementById('btn-unit-cmd')?.addEventListener('click', () => {
+          const sel = document.getElementById('sel-unit-cmd') as HTMLSelectElement | null;
+          if (sel?.value) {
+            militarySystem.assignCommander(u.id, sel.value);
+            this.showNotification('Командир назначен.', 'success');
+            this._showUnitHud([u.id]);
+          }
+        });
+      }
+      return;
     }
+
+    // Групповое выделение (несколько дивизий)
+    const totalStr = Math.round(units.reduce((s, u) => s + u.strength, 0));
+    const avgMorale = Math.round((units.reduce((s, u) => s + u.morale, 0) / units.length) * 100);
+    const anyMoving = units.some(u => u.targetLat !== undefined);
+    const chips = units.slice(0, 8).map(u =>
+      `<button class="uh-chip" data-chip-uid="${u.id}">${u.name.split('(')[0]!.trim()} (${Math.round(u.strength / 10)}%)</button>`
+    ).join('') + (units.length > 8 ? `<span class="uh-hint">+${units.length - 8}</span>` : '');
+
+    hud.classList.remove('hidden');
+    hud.innerHTML = `
+      <div class="uh-head">
+        <div class="uh-title">${Icons.army(14)} <span>Выбрано дивизий: ${units.length}</span></div>
+        <button class="uh-close" id="uh-close" aria-label="Снять выделение">${Icons.close(14)}</button>
+      </div>
+      <div class="uh-stats">
+        <div class="uh-stat"><span>Общая сила</span><b>${totalStr}</b></div>
+        <div class="uh-stat"><span>Ср. мораль</span><b>${avgMorale}%</b></div>
+      </div>
+      <div class="uh-chips">${chips}</div>
+      ${isPlayerGroup ? `
+        <div class="uh-actions">
+          ${anyMoving ? '<button class="btn-sm" id="btn-group-stop">Остановить все</button>' : ''}
+          <span class="uh-hint">ПКМ на карте — отправить всю группу • Esc — снять выделение</span>
+        </div>
+      ` : ''}
+    `;
+
+    document.getElementById('uh-close')?.addEventListener('click', () => {
+      worldMapSystem.setSelectedUnit(null);
+      this._hideUnitHud();
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-chip-uid]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.chipUid!;
+        worldMapSystem.focusUnit(id);
+        this._showUnitHud([id]);
+      });
+    });
+    document.getElementById('btn-group-stop')?.addEventListener('click', () => {
+      for (const u of units) militarySystem.stopUnit(u.id);
+      this._showUnitHud(units.map(u => u.id));
+    });
   }
 
   private _showCountryInfo(code: string): void {
