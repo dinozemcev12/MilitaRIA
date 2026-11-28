@@ -9,6 +9,7 @@ import { eventBus, GameEvents } from '../core/EventBus.js';
 import { countrySystem } from '../country/CountrySystem.js';
 import { Country } from '../country/Country.js';
 import { militarySystem, ECHELON_META, MilitaryUnit } from '../military/MilitarySystem.js';
+import { territorySystem } from '../military/TerritorySystem.js';
 import { logisticsSystem } from '../logistics/LogisticsSystem.js';
 import { intelSystem } from '../intel/IntelSystem.js';
 import { tacticalSystem } from '../tactical/TacticalSystem.js';
@@ -22,6 +23,7 @@ const LNG_MAX = 180;
 
 export type MapMode =
   | 'political'
+  | 'front'
   | 'terrain'
   | 'diplomacy'
   | 'economy'
@@ -36,6 +38,7 @@ interface Vec { x: number; y: number; }
 
 const MAP_MODE_LEGENDS: Record<MapMode, { title: string; items: { color: string; label: string }[] }> = {
   political:      { title: 'Политическая', items: [{ color: '#3fb950', label: 'Ваша страна' }, { color: '#fbc02d', label: 'Выбрано' }] },
+  front:          { title: 'Линия фронта', items: [{ color: '#fbbf24', label: 'Фронт' }, { color: '#ef4444', label: 'Захвачено' }, { color: '#38bdf8', label: 'Свои' }] },
   terrain:        { title: 'Рельеф', items: [{ color: '#cbd5e1', label: 'Хребты и пики' }, { color: '#475569', label: 'Горы' }, { color: '#166534', label: 'Леса/тайга' }, { color: '#ca8a04', label: 'Пустыни' }, { color: '#38bdf8', label: 'Реки' }] },
   diplomacy:      { title: 'Дипломатия', items: [{ color: '#1f6feb', label: 'Союзники' }, { color: '#3fb950', label: 'Дружеств.' }, { color: '#d97706', label: 'Враждебн.' }, { color: '#c62828', label: 'Война' }] },
   economy:        { title: 'Экономика (ВВП)', items: [{ color: '#1ce14e', label: 'Сверхдержавы' }, { color: '#1c8c4e', label: 'Средний' }, { color: '#1c464e', label: 'Низкий' }] },
@@ -67,9 +70,12 @@ export class WorldMapSystem implements IGameSystem {
   private hoverCode: string | null = null;
   private hoverCity: string | null = null;
   private selectedUnitId: string | null = null;
+  private rightDrag: { startX: number; startY: number; points: { lat: number; lng: number }[]; moved: boolean } | null = null;
   private mapMode: MapMode = 'political';
   private boundResize: () => void;
   private pulsePhase = 0;
+  private terrainTexture: HTMLImageElement | null = null;
+  private terrainTextureLoaded = false;
 
   static instance: WorldMapSystem;
   static getInstance(): WorldMapSystem {
@@ -90,6 +96,7 @@ export class WorldMapSystem implements IGameSystem {
     this.resize();
     window.addEventListener('resize', this.boundResize);
     this._attachInput();
+    this._loadTerrainTexture();
     eventBus.on(GameEvents.GAME_LOADED, () => {
       this.selectedUnitId = null;
       this._render();
@@ -99,6 +106,22 @@ export class WorldMapSystem implements IGameSystem {
     });
     this._render();
     console.log('[WorldMapSystem] инициализировано (реальная карта мира + инфраструктура)');
+  }
+
+  private _loadTerrainTexture(): void {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      this.terrainTexture = img;
+      this.terrainTextureLoaded = true;
+      console.log('[WorldMapSystem] Текстура рельефа загружена:', img.width, 'x', img.height);
+      this._render();
+    };
+    img.onerror = () => {
+      console.warn('[WorldMapSystem] Не удалось загрузить текстуру рельефа');
+      this.terrainTextureLoaded = false;
+    };
+    img.src = '/terrain-texture.jpg';
   }
 
   update(dt: number): void {
@@ -120,6 +143,10 @@ export class WorldMapSystem implements IGameSystem {
 
   getMapMode(): MapMode {
     return this.mapMode;
+  }
+
+  getSelectedUnitId(): string | null {
+    return this.selectedUnitId;
   }
 
   setSelectedUnit(unitId: string | null): void {
@@ -180,6 +207,14 @@ export class WorldMapSystem implements IGameSystem {
   private _attachInput(): void {
     const c = this.canvas!;
     c.addEventListener('mousedown', (e) => {
+      if (e.button === 2) {
+        e.preventDefault();
+        if (!this.selectedUnitId) return;
+        const rect = c.getBoundingClientRect();
+        const { lat, lng } = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        this.rightDrag = { startX: e.clientX, startY: e.clientY, points: [{ lat, lng }], moved: false };
+        return;
+      }
       if (e.button !== 0) return;
       this.isDragging = true;
       this.didDrag = false;
@@ -195,6 +230,20 @@ export class WorldMapSystem implements IGameSystem {
         this.cx = this.camStart.x + dx;
         this.cy = this.camStart.y + dy;
         this._render();
+        return;
+      }
+      if (this.rightDrag && (e.buttons & 2)) {
+        const rect = c.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const { lat, lng } = this.screenToWorld(mx, my);
+        const last = this.rightDrag.points[this.rightDrag.points.length - 1]!;
+        const lastP = this.worldToScreen(last.lat, last.lng);
+        if (Math.hypot(lastP.x - mx, lastP.y - my) > 6) {
+          this.rightDrag.points.push({ lat, lng });
+          this.rightDrag.moved = true;
+          this._render();
+        }
         return;
       }
       if (e.target === c) {
@@ -223,7 +272,23 @@ export class WorldMapSystem implements IGameSystem {
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 2 && this.rightDrag) {
+        const drag = this.rightDrag;
+        this.rightDrag = null;
+        const unitId = this.selectedUnitId;
+        if (unitId) {
+          if (drag.moved && drag.points.length >= 2) {
+            militarySystem.setOffensiveLine(unitId, drag.points);
+          } else {
+            const rect = c.getBoundingClientRect();
+            const { lat, lng } = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+            militarySystem.orderMove(unitId, lat, lng);
+          }
+          this._render();
+        }
+        return;
+      }
       this.isDragging = false;
     });
 
@@ -286,14 +351,8 @@ export class WorldMapSystem implements IGameSystem {
     });
 
     c.addEventListener('contextmenu', (e) => {
+      // ПКМ используется для приказа/рисования линии наступления.
       e.preventDefault();
-      if (!this.selectedUnitId) return;
-      const rect = c.getBoundingClientRect();
-      const { lat, lng } = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      if (militarySystem.orderMove(this.selectedUnitId, lat, lng)) {
-        eventBus.emit(GameEvents.UNIT_MOVED, { unitId: this.selectedUnitId, lat, lng });
-        this._render();
-      }
     });
   }
 
@@ -377,6 +436,8 @@ export class WorldMapSystem implements IGameSystem {
         const lvl = intelSystem.getIntelLevel(player.code, c.code);
         return lvl >= 0.75 ? '#1f6feb' : lvl >= 0.45 ? '#d29922' : '#3a4452';
       }
+      case 'front':
+        return 'rgba(14, 22, 34, 1)';
       case 'terrain':
         return 'rgba(0,0,0,0)';
       case 'political':
@@ -390,33 +451,36 @@ export class WorldMapSystem implements IGameSystem {
     const { ctx, canvas } = this;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, '#091521');
-    grad.addColorStop(0.5, '#0c1d2e');
-    grad.addColorStop(1, '#08121c');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 0. Базовая текстура рельефа (на весь экран, масштабируется под проекцию)
+    if (this.terrainTextureLoaded && this.terrainTexture) {
+      this._drawTerrainTexture();
+    } else {
+      // Фолбэк: тёмный градиент, если текстура не загрузилась
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, '#091521');
+      grad.addColorStop(0.5, '#0c1d2e');
+      grad.addColorStop(1, '#08121c');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     this._drawGraticule();
     this._drawAntarctica();
 
-    // 1. Физическая подложка суши и биомов (как в HOI4)
+    // 1. Физическая подложка суши (очень слабая, чтобы текстура NASA была видна)
     const countries = countrySystem.getAll();
     this._drawLandBase(countries);
-    this._drawHoIBaseTerrain();
 
     // 2. Политическая заливка стран и чёткие границы
     const player = countrySystem.getPlayer();
     for (const c of countries) {
       this._drawCountry(c);
     }
-
-    // 3. Рельефные хребты, затенение склонов (hillshading), пики и реки поверх заливки
-    this._drawHoIReliefShading(this.mapMode === 'terrain');
-    this._drawRivers();
-    this._drawTerrainLabels();
+    this._drawTerritoryFill();
 
     this._drawTransportCorridors();
+    this._drawFrontLines();
 
     if (this.hoverCode && this.hoverCode !== this.inspectedCode) {
       const hov = countrySystem.getCountry(this.hoverCode);
@@ -433,9 +497,42 @@ export class WorldMapSystem implements IGameSystem {
     this._drawCities();
     this._drawLabels();
     this._drawUnits();
+    this._drawOffensiveLines();
+    this._drawFrontDragPreview();
     this._drawBattles();
     this._drawLegend();
     this._drawHoverTooltip();
+  }
+
+  private _drawTerrainTexture(): void {
+    if (!this.terrainTexture || !this.canvas) return;
+    const ctx = this.ctx!;
+    const img = this.terrainTexture;
+
+    // Используем worldToScreen для точного соответствия проекции карты
+    const topLeft = this.worldToScreen(LAT_MAX, LNG_MIN);      // 84°N, 180°W
+    const bottomRight = this.worldToScreen(LAT_MIN, LNG_MAX);  // 62°S, 180°E
+
+    const drawW = bottomRight.x - topLeft.x;
+    const drawH = bottomRight.y - topLeft.y;
+
+    if (drawW <= 0 || drawH <= 0) return;
+    if (topLeft.x > this.canvas.width || topLeft.y > this.canvas.height) return;
+    if (topLeft.x + drawW < 0 || topLeft.y + drawH < 0) return;
+
+    // NASA Blue Marble 12000x6000 покрывает полный глобус (-90°..+90°).
+    // Наша карта показывает -62°..+84° (146° из 180°). Обрезаем по вертикали.
+    const textureH = img.height;
+    const srcY = (90 - LAT_MAX) / 180 * textureH;
+    const srcH = (LAT_MAX - LAT_MIN) / 180 * textureH;
+
+    ctx.save();
+    // В режиме terrain текстура ярче, в политическом — приглушённее, чтобы страны были видны
+    ctx.globalAlpha = this.mapMode === 'terrain' ? 0.92 : 0.42;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, srcY, img.width, srcH, topLeft.x, topLeft.y, drawW, drawH);
+    ctx.restore();
   }
 
   private _drawGraticule(): void {
@@ -500,8 +597,10 @@ export class WorldMapSystem implements IGameSystem {
   private _drawLandBase(countries: Country[]): void {
     const ctx = this.ctx!;
     ctx.save();
-    // В режиме 'terrain' базовая суша имеет сочный тон низменностей, в других режимах — приглушённый
-    ctx.fillStyle = this.mapMode === 'terrain' ? '#223824' : '#273429';
+    // Очень слабая заливка суши, чтобы текстура NASA была видна сквозь страну
+    const isTerrain = this.mapMode === 'terrain';
+    ctx.fillStyle = isTerrain ? '#1b2a20' : '#161d23';
+    ctx.globalAlpha = 0.18;
     for (const c of countries) {
       const polys = getCountryPolygons(c.code);
       if (!polys.length) continue;
@@ -520,22 +619,14 @@ export class WorldMapSystem implements IGameSystem {
     const isInspected = this.inspectedCode === c.code;
     const isHovered = this.hoverCode === c.code;
     const isTerrainMode = this.mapMode === 'terrain';
+    const isFrontMode = this.mapMode === 'front';
     const fillColor = this._getCountryFillColor(c);
 
-    // Заливка территории страны
-    if (!isTerrainMode) {
-      ctx.fillStyle = fillColor;
-      // В HoI4 полупрозрачные цвета наций: рельеф пробивается сквозь цвет
-      ctx.globalAlpha = isInspected ? 0.48 : isHovered ? 0.40 : 0.30;
-      this._traceCountryPath(ctx, c);
-      ctx.fill();
-    } else if (isInspected || isHovered) {
-      // В режиме рельефа земля открыта на 100%, при наведении — деликатная подсветка
-      ctx.fillStyle = isInspected ? 'rgba(251, 191, 36, 0.20)' : 'rgba(255, 255, 255, 0.10)';
-      ctx.globalAlpha = 1;
-      this._traceCountryPath(ctx, c);
-      ctx.fill();
-    }
+    // Заливка территории страны — почти прозрачная, текстура рельефа видна сквозь неё
+    ctx.fillStyle = fillColor;
+    ctx.globalAlpha = isInspected ? 0.22 : isHovered ? 0.16 : 0.10;
+    this._traceCountryPath(ctx, c);
+    ctx.fill();
 
     // Визуальная штриховка оккупированной страны цветом оккупанта
     if (c.occupiedBy) {
@@ -544,9 +635,9 @@ export class WorldMapSystem implements IGameSystem {
       this._traceCountryPath(ctx, c);
       ctx.clip();
       ctx.strokeStyle = occ?.color ?? '#ef4444';
-      ctx.globalAlpha = 0.55;
-      ctx.lineWidth = 2.2;
-      const step = 12;
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = 1.8;
+      const step = 14;
       for (let x = -this.canvas!.height; x < this.canvas!.width + this.canvas!.height; x += step) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
@@ -556,16 +647,21 @@ export class WorldMapSystem implements IGameSystem {
       ctx.restore();
     }
 
-    // Внутренний цветной контур границы (стиль HOI4) + внешняя чёткая обводка
-    ctx.globalAlpha = isTerrainMode ? 0.95 : 0.78;
-    ctx.strokeStyle = isTerrainMode ? c.color : fillColor;
-    ctx.lineWidth = Math.max(1.2, Math.min(2.8, this.scale * (isTerrainMode ? 1.1 : 0.9)));
+    // Чёткая цветная граница страны (стиль HoI4) поверх текстуры и заливки
+    const isSpecialMode = isTerrainMode || isFrontMode;
+    ctx.globalAlpha = isSpecialMode ? 0.85 : 0.95;
+    ctx.strokeStyle = isSpecialMode ? 'rgba(255,255,255,0.75)' : fillColor;
+    ctx.lineWidth = Math.max(1.2, Math.min(2.6, this.scale * (isSpecialMode ? 0.9 : 1.0)));
+    this._traceCountryPath(ctx, c);
     ctx.stroke();
 
-    ctx.globalAlpha = isTerrainMode ? 0.85 : 0.90;
-    ctx.strokeStyle = 'rgba(9, 13, 18, 0.85)';
-    ctx.lineWidth = Math.max(0.6, Math.min(1.4, this.scale * 0.45));
+    // Тёмная внешняя обводка границы для контраста
+    ctx.globalAlpha = isSpecialMode ? 0.6 : 0.75;
+    ctx.strokeStyle = 'rgba(6, 9, 14, 0.85)';
+    ctx.lineWidth = Math.max(0.5, Math.min(1.0, this.scale * 0.35));
+    this._traceCountryPath(ctx, c);
     ctx.stroke();
+
     ctx.restore();
   }
 
@@ -1006,36 +1102,84 @@ export class WorldMapSystem implements IGameSystem {
       }
 
       const isSelected = u.id === this.selectedUnitId;
-      const w = 20, h = 13;
+      const w = 24, h = 16;
 
-      if (isSelected) {
-        ctx.strokeStyle = 'rgba(251, 192, 45, 0.55)';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(p.x - w / 2 - 2, p.y - h / 2 - 2, w + 4, h + 4);
+      // Ходовая линия к цели
+      if (u.targetLat !== undefined && u.targetLng !== undefined) {
+        const tp = this.worldToScreen(u.targetLat, u.targetLng);
+        ctx.strokeStyle = isPlayer ? 'rgba(63, 185, 80, 0.55)' : isEnemy ? 'rgba(248, 81, 73, 0.5)' : 'rgba(255,255,255,0.2)';
+        ctx.setLineDash([6, 5]);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(tp.x, tp.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
 
-      ctx.fillStyle = isPlayer ? '#1f6f3d' : isEnemy ? '#b91c1c' : isAlly ? '#1d4ed8' : '#30363d';
-      ctx.strokeStyle = isSelected ? '#fbc02d' : '#e6edf3';
-      ctx.lineWidth = isSelected ? 2 : 1;
+      // Рамка выделения
+      if (isSelected) {
+        ctx.strokeStyle = '#fbc02d';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = 'rgba(251, 192, 45, 0.6)';
+        ctx.shadowBlur = 8;
+        ctx.strokeRect(p.x - w / 2 - 3, p.y - h / 2 - 3, w + 6, h + 6);
+        ctx.shadowBlur = 0;
+      }
+
+      // Фишка юнита — większy и читаемее
+      ctx.fillStyle = isPlayer ? '#22c55e' : isEnemy ? '#ef4444' : isAlly ? '#3b82f6' : '#64748b';
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1.4;
       ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
       ctx.strokeRect(p.x - w / 2, p.y - h / 2, w, h);
 
       this._drawUnitSymbol(ctx, u, p.x, p.y, w, h);
 
-      // Полоса боеспособности под фишкой
+      // Полоса боеспособности под фишкой (выше и толще)
       const hpRatio = Math.max(0, Math.min(1, u.strength / 1000));
-      ctx.fillStyle = '#0d1117';
-      ctx.fillRect(p.x - w / 2, p.y + h / 2 + 2, w, 3);
-      ctx.fillStyle = hpRatio > 0.6 ? '#3fb950' : hpRatio > 0.3 ? '#d29922' : '#f85149';
-      ctx.fillRect(p.x - w / 2, p.y + h / 2 + 2, w * hpRatio, 3);
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(p.x - w / 2, p.y + h / 2 + 4, w, 5);
+      ctx.fillStyle = hpRatio > 0.6 ? '#22c55e' : hpRatio > 0.3 ? '#f59e0b' : '#ef4444';
+      ctx.fillRect(p.x - w / 2 + 1, p.y + h / 2 + 5, (w - 2) * hpRatio, 3);
+
+      // Индикатор стойки (цветная точка над фишкой)
+      if (this.scale >= 1.0) {
+        const stance = u.stance ?? 'front';
+        const stanceColors: Record<string, string> = {
+          front: '#38bdf8',
+          attack: '#f59e0b',
+          defend: '#22c55e',
+          reserve: '#94a3b8'
+        };
+        ctx.fillStyle = stanceColors[stance] ?? '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - h / 2 - 6, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#020617';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
 
       // Эшелон над фишкой
-      if (u.echelon && this.scale >= 1.6) {
+      if (u.echelon && this.scale >= 1.4) {
         const echShort = ECHELON_META[u.echelon]?.label.slice(0, 3).toUpperCase() ?? '';
         ctx.fillStyle = '#cbd5e1';
         ctx.font = '700 7px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(echShort, p.x, p.y - h / 2 - 4);
+        ctx.fillText(echShort, p.x, p.y - h / 2 - 11);
+      }
+
+      // Название при выделении
+      if (isSelected && this.scale >= 1.0) {
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = '700 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(u.name, p.x, p.y - h / 2 - 18);
       }
     }
     ctx.restore();
@@ -1072,6 +1216,141 @@ export class WorldMapSystem implements IGameSystem {
       ctx.textBaseline = 'middle';
       ctx.fillText('⚔', p.x, p.y + 0.5);
     }
+    ctx.restore();
+  }
+
+  private _drawTerritoryFill(): void {
+    const data = territorySystem.getRenderData();
+    if (!data.captured.length) return;
+    const ctx = this.ctx!;
+    const player = countrySystem.getPlayer();
+    ctx.save();
+    for (const group of data.captured) {
+      const owner = countrySystem.getCountry(group.owner);
+      if (!owner) continue;
+      const controller = countrySystem.getCountry(group.controller);
+      const isEnemyOccupied = controller && player && player.warWith.includes(controller.code);
+      ctx.save();
+      this._traceCountryPath(ctx, owner);
+      ctx.clip();
+      ctx.globalAlpha = isEnemyOccupied ? 0.5 : 0.35;
+      ctx.fillStyle = controller?.color ?? '#ef4444';
+      for (const idx of group.cells) {
+        const b = territorySystem.getCellBounds(idx);
+        if (!b) continue;
+        const p1 = this.worldToScreen(b.maxLat, b.minLng);
+        const p2 = this.worldToScreen(b.minLat, b.maxLng);
+        ctx.fillRect(p1.x, p1.y, Math.max(1, p2.x - p1.x), Math.max(1, p2.y - p1.y));
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  private _drawFrontLines(): void {
+    const data = territorySystem.getRenderData();
+    if (!data.fronts.length) return;
+    const ctx = this.ctx!;
+    const player = countrySystem.getPlayer();
+    const playerInvolved = !!player && data.fronts.some(f => f.a === player.code || f.b === player.code);
+    const pulse = 0.72 + 0.28 * Math.sin(this.pulsePhase);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Glow pass
+    ctx.strokeStyle = playerInvolved ? `rgba(251,191,36,${0.18 * pulse})` : 'rgba(248,113,113,0.16)';
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    for (const f of data.fronts) {
+      const p1 = this.worldToScreen(f.lat1, f.lng1);
+      const p2 = this.worldToScreen(f.lat2, f.lng2);
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+    }
+    ctx.stroke();
+    // Core line
+    ctx.strokeStyle = playerInvolved ? '#fbbf24' : '#f87171';
+    ctx.lineWidth = Math.max(2.2, Math.min(4.5, this.scale * 1.5));
+    ctx.stroke();
+    // Subtle dash for enemy fronts
+    if (!playerInvolved) {
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = 'rgba(248,113,113,0.5)';
+      ctx.lineWidth = Math.max(1.2, Math.min(2.5, this.scale * 0.8));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  private _drawOffensiveLines(): void {
+    const player = countrySystem.getPlayer();
+    if (!player) return;
+    for (const u of militarySystem.getUnitsByCountry(player.code)) {
+      if (!u.offensiveLine || u.offensiveLine.length === 0) continue;
+      this._drawArrowPath([{ lat: u.lat, lng: u.lng }, ...u.offensiveLine], u.id === this.selectedUnitId);
+    }
+  }
+
+  private _drawFrontDragPreview(): void {
+    if (!this.rightDrag || this.rightDrag.points.length < 2) return;
+    this._drawArrowPath(this.rightDrag.points, true);
+  }
+
+  private _drawArrowPath(points: { lat: number; lng: number }[], strong: boolean): void {
+    if (points.length < 2) return;
+    const ctx = this.ctx!;
+    const screen = points.map(p => this.worldToScreen(p.lat, p.lng));
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Глау под линией
+    ctx.shadowColor = strong ? 'rgba(245,158,11,0.5)' : 'rgba(245,158,11,0.25)';
+    ctx.shadowBlur = strong ? 10 : 4;
+
+    ctx.setLineDash([10, 6]);
+    ctx.strokeStyle = strong ? '#f59e0b' : 'rgba(245,158,11,0.55)';
+    ctx.lineWidth = strong ? 3 : 2;
+    ctx.beginPath();
+    const first = screen[0]!;
+    ctx.moveTo(first.x, first.y);
+    for (let i = 1; i < screen.length; i++) {
+      const p = screen[i]!;
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+
+    // Узловые точки
+    for (let i = 1; i < screen.length - 1; i++) {
+      const p = screen[i]!;
+      ctx.fillStyle = strong ? '#f59e0b' : 'rgba(245,158,11,0.7)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, strong ? 3.5 : 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#020617';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+
+    // Стрела в конце
+    const last = screen[screen.length - 1]!;
+    const prev = screen[screen.length - 2]!;
+    const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
+    const size = strong ? 12 : 8;
+    ctx.fillStyle = strong ? '#f59e0b' : 'rgba(245,158,11,0.75)';
+    ctx.beginPath();
+    ctx.moveTo(last.x, last.y);
+    ctx.lineTo(last.x - Math.cos(angle - 0.4) * size, last.y - Math.sin(angle - 0.4) * size);
+    ctx.lineTo(last.x - Math.cos(angle + 0.4) * size, last.y - Math.sin(angle + 0.4) * size);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#020617';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
     ctx.restore();
   }
 

@@ -11,7 +11,8 @@ import { Country } from '../country/Country.js';
 import { economySystem } from '../economy/EconomySystem.js';
 import { politicsSystem, AVAILABLE_LAWS, MINISTER_CANDIDATES } from '../politics/PoliticsSystem.js';
 import { diplomacySystem } from '../diplomacy/DiplomacySystem.js';
-import { militarySystem, UNIT_META, UnitType, ECHELON_META, COMMANDER_TRAITS } from '../military/MilitarySystem.js';
+import { militarySystem, UNIT_META, UnitType, ECHELON_META, COMMANDER_TRAITS, STANCE_META, UnitStance, Echelon, ECHELON_ORDER } from '../military/MilitarySystem.js';
+import { territorySystem } from '../military/TerritorySystem.js';
 import { worldMapSystem, MapMode } from '../world/WorldMapSystem.js';
 import { eventsSystem, RandomEvent } from '../events/EventsSystem.js';
 import { saveSystem } from '../core/SaveSystem.js';
@@ -269,6 +270,7 @@ export class UISystem implements IGameSystem {
     document.getElementById('game-container')!.appendChild(bar);
     const modes: { id: MapMode; icon: string; label: string }[] = [
       { id: 'political', icon: Icons.diplomacy(13), label: 'Политическая' },
+      { id: 'front', icon: Icons.crosshair(13), label: 'Фронт' },
       { id: 'terrain', icon: Icons.mountain(13), label: 'Рельеф' },
       { id: 'diplomacy', icon: Icons.handshake(13), label: 'Дипломатия' },
       { id: 'economy', icon: Icons.economy(13), label: 'Экономика' },
@@ -405,6 +407,17 @@ export class UISystem implements IGameSystem {
       const p = countrySystem.getPlayer();
       if (p && (d.countryCode === p.code || d.occupierCode === p.code)) {
         this.showNotification(`🏳 ${occ?.nameRu ?? d.occupierCode} захватила ${capLabel}г. ${d.city}!`, d.countryCode === p.code ? 'danger' : 'success');
+      }
+    });
+    eventBus.on(GameEvents.TERRITORY_UPDATED, (d: any) => {
+      if (!d?.stats) return;
+      const p = countrySystem.getPlayer();
+      if (!p) return;
+      for (const [code, st] of Object.entries(d.stats as Record<string, { lost: number; progress: number }>)) {
+        if (st.lost > 0 && (code === p.code || p.warWith.includes(code))) {
+          this.showNotification(`⚠️ ${code}: потеряно ${Math.round(st.progress * 100)}% территории`, 'warn');
+          break;
+        }
       }
     });
     eventBus.on(GameEvents.COUNTRY_CAPITULATED, (d: any) => {
@@ -781,17 +794,32 @@ export class UISystem implements IGameSystem {
     const unitsHtml = units.length > 0 ? units.map(u => {
       const morale = Math.round(u.morale * 100);
       const supply = Math.round(u.supply * 100);
+      const org = Math.round((u.organization ?? 0.8) * 100);
+      const ent = Math.round((u.entrenchment ?? 0) * 100);
+      const man = Math.round(u.manpower ?? 0);
+      const maxMan = Math.max(1, Math.round(u.maxManpower ?? 1));
+      const exp = Math.round(u.experience * 100);
       const morCls = morale >= 70 ? 'pos' : morale < 40 ? 'neg' : 'neutral';
+      const supCls = supply >= 70 ? 'pos' : supply < 40 ? 'neg' : 'neutral';
+      const orgCls = org >= 70 ? 'pos' : org < 40 ? 'neg' : 'neutral';
+      const entCls = ent >= 50 ? 'pos' : ent < 20 ? 'neg' : 'neutral';
+      const stance = STANCE_META[u.stance ?? 'front'];
+      const isSelected = worldMapSystem.getSelectedUnitId() === u.id;
       return `
-        <div class="unit-row" data-uid="${u.id}">
+        <div class="unit-card ${isSelected ? 'selected' : ''}" data-uid="${u.id}">
           <div class="unit-type-badge">${this._unitTypeIcon(u.type)}</div>
           <div class="unit-info">
-            <div class="unit-name">${u.name} <span style="font-size:10px;color:var(--text-muted)">[${ECHELON_META[u.echelon ?? 'battalion'].label}]</span></div>
-            <div class="unit-stats">
-              <span class="${morCls}">${Icons.arrowUp(11)} ${morale}%</span>
-              <span>${Icons.bolt(11)} ${supply}%</span>
-              <span>${Icons.army(11)} ${u.strength}</span>
-              <span>${Icons.star(11)} ${Math.round(u.experience * 100)}%</span>
+            <div class="unit-name-row">
+              <div class="unit-name">${u.name}</div>
+              <div class="unit-echelon">${ECHELON_META[u.echelon ?? 'battalion'].label}</div>
+            </div>
+            <div class="unit-stats-compact">
+              <span class="unit-stat-compact ${morCls}">${Icons.arrowUp(10)} ${morale}%</span>
+              <span class="unit-stat-compact ${supCls}">${Icons.bolt(10)} ${supply}%</span>
+              <span class="unit-stat-compact ${orgCls}">${Icons.shield(10)} ${org}%</span>
+              <span class="unit-stat-compact ${entCls}">${Icons.pin(10)} ${ent}%</span>
+              <span class="unit-stat-compact neutral">${Icons.star(10)} ${exp}%</span>
+              <span class="unit-stat-compact neutral">${Icons.army(10)} ${man}/${maxMan}</span>
             </div>
           </div>
           <button class="btn-mini" data-uid="${u.id}" aria-label="Выбрать на карте">${Icons.pin(13)}</button>
@@ -799,9 +827,61 @@ export class UISystem implements IGameSystem {
       `;
     }).join('') : '<div class="empty-hint">Войска отсутствуют</div>';
 
+    const tstats = territorySystem.getCountryStats(c.code);
+    const frontLength = territorySystem.getFrontLength(c.code);
+    const stanceCounts = militarySystem.getStanceCounts(c.code);
+    const frontHtml = `
+      <div class="army-widget">
+        <div class="army-widget-title">${Icons.crosshair(14)} Линия фронта</div>
+        <div class="army-stat-grid">
+          <div class="army-stat-item">
+            <div class="army-stat-label">Контроль территории</div>
+            <div class="army-stat-value ${tstats.lost > 0 ? 'neg' : 'pos'}">${tstats.controlled} / ${tstats.total} клеток</div>
+          </div>
+          <div class="army-stat-item">
+            <div class="army-stat-label ${tstats.lost > 0 ? 'neg' : 'pos'}">Потеряно</div>
+            <div class="army-stat-value ${tstats.lost > 0 ? 'neg' : 'pos'}">${Math.round(tstats.progress * 100)}%</div>
+          </div>
+          <div class="army-stat-item">
+            <div class="army-stat-label">Длина фронта</div>
+            <div class="army-stat-value neutral">${frontLength} уч.</div>
+          </div>
+          <div class="army-stat-item">
+            <div class="army-stat-label">Всего соединений</div>
+            <div class="army-stat-value neutral">${units.length}</div>
+          </div>
+        </div>
+        <div class="army-stat-grid">
+          <div class="army-stat-item">
+            <div class="army-stat-label">Атака</div>
+            <div class="army-stat-value">${stanceCounts.attack}</div>
+          </div>
+          <div class="army-stat-item">
+            <div class="army-stat-label">Фронт</div>
+            <div class="army-stat-value">${stanceCounts.front}</div>
+          </div>
+          <div class="army-stat-item">
+            <div class="army-stat-label">Оборона</div>
+            <div class="army-stat-value">${stanceCounts.defend}</div>
+          </div>
+          <div class="army-stat-item">
+            <div class="army-stat-label">Резерв</div>
+            <div class="army-stat-value">${stanceCounts.reserve}</div>
+          </div>
+        </div>
+        <div class="info-box" style="margin-top:8px; font-size: 11px;">ПКМ на карте — приказ. Зажмите ПКМ и протащите — линия наступления. Стойку задайте в карточке соединения.</div>
+      </div>
+    `;
+
     const recruitHtml = (Object.keys(UNIT_META) as UnitType[]).map(type => {
       const meta = UNIT_META[type]!;
-      return `<button class="btn-recruit" data-type="${type}">${this._unitTypeIcon(type)} ${meta.label} (${meta.cost} млрд)</button>`;
+      return `
+        <button class="btn-recruit-enhanced" data-type="${type}">
+          <span class="recruit-icon">${this._unitTypeIcon(type)}</span>
+          <span>${meta.label}</span>
+          <span class="recruit-cost">${meta.cost} млрд</span>
+        </button>
+      `;
     }).join('');
 
     const warEnemy = c.warWith[0];
@@ -811,6 +891,7 @@ export class UISystem implements IGameSystem {
 
     return `
       ${tacBtn ? `<div class="panel-section">${tacBtn}</div>` : ''}
+      ${frontHtml}
       <div class="panel-section">
         <div class="psec-title">Боевые единицы (${units.length})</div>
         <div id="unit-list">${unitsHtml}</div>
@@ -818,7 +899,7 @@ export class UISystem implements IGameSystem {
       <div class="panel-section">
         <div class="psec-title">Призыв</div>
         <div class="kv-row"><span class="kv-k">Резервисты</span><span class="kv-v">${this._fmt(c.manpower)} тыс.</span></div>
-        <div class="recruit-grid">${recruitHtml}</div>
+        <div class="recruit-grid-enhanced">${recruitHtml}</div>
       </div>
     `;
   }
@@ -1120,14 +1201,14 @@ export class UISystem implements IGameSystem {
           this._showUnitInfo(uid);
         });
       });
-      document.querySelectorAll<HTMLDivElement>('.unit-row').forEach(row => {
+      document.querySelectorAll<HTMLDivElement>('.unit-card').forEach(row => {
         row.addEventListener('click', () => {
           const uid = row.dataset.uid!;
           worldMapSystem.setSelectedUnit(uid);
           this._showUnitInfo(uid);
         });
       });
-      document.querySelectorAll<HTMLButtonElement>('.btn-recruit').forEach(btn => {
+      document.querySelectorAll<HTMLButtonElement>('.btn-recruit-enhanced').forEach(btn => {
         btn.addEventListener('click', () => {
           const type = btn.dataset.type as UnitType;
           const res = militarySystem.recruitUnit(c.code, type);
@@ -1366,37 +1447,119 @@ export class UISystem implements IGameSystem {
       `<option value="${k}" ${u.commander === k ? 'selected' : ''}>${k} (${COMMANDER_TRAITS[k]!.label})</option>`
     ).join('');
 
-    this._showModal(`${Icons.shield(15)} ${u.name}`, `
+    const stance = u.stance ?? 'front';
+    const stancePills = (Object.keys(STANCE_META) as UnitStance[]).map(s => {
+      const meta = STANCE_META[s];
+      return `<button class="stance-pill ${stance === s ? 'active' : ''} ${s}" data-stance="${s}" title="${meta.desc}">${meta.label}</button>`;
+    }).join('');
+
+    const manRatio = Math.min(100, ((u.manpower ?? 0) / Math.max(0.1, u.maxManpower ?? 1)) * 100);
+    const strCls = u.strength >= 700 ? 'pos' : u.strength < 300 ? 'neg' : 'neutral';
+    const morCls = u.morale >= 0.6 ? 'pos' : u.morale < 0.4 ? 'neg' : 'neutral';
+    const orgCls = (u.organization ?? 0.8) >= 0.6 ? 'pos' : (u.organization ?? 0.8) < 0.4 ? 'neg' : 'neutral';
+    const supCls = u.supply >= 0.6 ? 'pos' : u.supply < 0.4 ? 'neg' : 'neutral';
+    const entCls = (u.entrenchment ?? 0) >= 0.5 ? 'pos' : (u.entrenchment ?? 0) < 0.2 ? 'neg' : 'neutral';
+    const expCls = u.experience >= 0.6 ? 'pos' : u.experience < 0.3 ? 'neg' : 'neutral';
+
+    this._showModal(`${Icons.shield(18)} ${u.name}`, `
       <div class="unit-modal">
-        <div class="kv-row"><span class="kv-k">Тип</span><span class="kv-v">${UNIT_META[u.type]?.label ?? u.type}</span></div>
-        <div class="kv-row"><span class="kv-k">Формирование</span><span class="kv-v">${echLabel}</span></div>
-        <div class="kv-row"><span class="kv-k">Командир</span><span class="kv-v">${u.commander ?? 'Не назначен'}</span></div>
-        <div class="kv-row"><span class="kv-k">Сила</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.strength/10}%;background:var(--accent-text)"></div><span>${u.strength}/1000</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Мораль</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.morale*100}%;background:${u.morale>0.6?'var(--status-pos)':'var(--status-danger)'}"></div><span>${Math.round(u.morale*100)}%</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Снабжение</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.supply*100}%;background:var(--status-warn)"></div><span>${Math.round(u.supply*100)}%</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Опыт</span><span class="kv-v bar-wrap">
-          <div class="bar" style="width:${u.experience*100}%;background:var(--accent-solid)"></div><span>${Math.round(u.experience*100)}%</span>
-        </span></div>
-        <div class="kv-row"><span class="kv-k">Позиция</span><span class="kv-v">${u.lat.toFixed(1)}°N, ${u.lng.toFixed(1)}°E</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em">${echLabel} · ${UNIT_META[u.type]?.label ?? u.type}</div>
+            <div style="font-size:15px;font-weight:800;color:var(--text-primary)">${u.commander ? `Ком.: ${u.commander}` : 'Командир не назначен'}</div>
+          </div>
+          <span class="stance-pill ${stance} active" style="font-size:10px;padding:4px 8px">${STANCE_META[stance].short}</span>
+        </div>
+
+        <div class="unit-modal-section">
+          <div class="unit-modal-section-title">${Icons.army(12)} Состав и боеготовность</div>
+          <div class="unit-modal-stat-grid">
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Личный состав</div>
+              <div class="unit-modal-stat-value ${manRatio > 70 ? 'pos' : manRatio < 40 ? 'neg' : 'neutral'}">${Math.round(u.manpower ?? 0)} / ${Math.round(u.maxManpower ?? 0)} тыс.</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${manRatio}%;background:var(--accent-text)"></div></div>
+            </div>
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Боеготовность</div>
+              <div class="unit-modal-stat-value ${strCls}">${u.strength}/1000</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${u.strength / 10}%;background:var(--accent-text)"></div></div>
+            </div>
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Мораль</div>
+              <div class="unit-modal-stat-value ${morCls}">${Math.round(u.morale * 100)}%</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${u.morale * 100}%;background:${u.morale > 0.6 ? 'var(--status-pos)' : 'var(--status-danger)'}"></div></div>
+            </div>
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Организация</div>
+              <div class="unit-modal-stat-value ${orgCls}">${Math.round((u.organization ?? 0.8) * 100)}%</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${(u.organization ?? 0.8) * 100}%;background:var(--accent-solid)"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="unit-modal-section">
+          <div class="unit-modal-section-title">${Icons.shield(12)} Статус и снабжение</div>
+          <div class="unit-modal-stat-grid">
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Снабжение</div>
+              <div class="unit-modal-stat-value ${supCls}">${Math.round(u.supply * 100)}%</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${u.supply * 100}%;background:var(--status-warn)"></div></div>
+            </div>
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Окопы</div>
+              <div class="unit-modal-stat-value ${entCls}">${Math.round((u.entrenchment ?? 0) * 100)}%</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${(u.entrenchment ?? 0) * 100}%;background:var(--status-pos)"></div></div>
+            </div>
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Опыт</div>
+              <div class="unit-modal-stat-value ${expCls}">${Math.round(u.experience * 100)}%</div>
+              <div class="unit-modal-bar"><div class="unit-modal-bar-fill" style="width:${u.experience * 100}%;background:var(--accent-solid)"></div></div>
+            </div>
+            <div class="unit-modal-stat-row">
+              <div class="unit-modal-stat-label">Позиция</div>
+              <div class="unit-modal-stat-value neutral">${u.lat.toFixed(1)}°N, ${u.lng.toFixed(1)}°E</div>
+              <div class="unit-modal-bar" style="height:1px;background:transparent"></div>
+            </div>
+          </div>
+        </div>
+
         ${isPlayerUnit ? `
-          <div style="margin-top:10px;display:flex;gap:6px;flex-direction:column">
-            <button class="btn-sm" id="btn-unit-promote">Укрупнить соединение (следующий эшелон)</button>
+        <div class="unit-modal-section">
+          <div class="unit-modal-section-title">${Icons.pin(12)} Управление</div>
+          <div style="margin-bottom:8px">
+            <div style="font-size:10px;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Стойка соединения</div>
+            <div class="stance-pills">${stancePills}</div>
+            <div class="info-box" style="font-size:11px;margin-top:6px">${STANCE_META[stance].desc}</div>
+          </div>
+          <div class="btn-group-vertical" style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn-sm" id="btn-unit-promote" style="width:100%">${Icons.arrowUp(12)} Укрупнить соединение (${ECHELON_META[u.echelon ?? 'battalion'].label} → ${this._nextEchelonLabel(u.echelon ?? 'battalion')})</button>
+            ${u.offensiveLine?.length ? `<button class="btn-sm" id="btn-unit-clear-line" style="width:100%">${Icons.close(12)} Отменить линию наступления</button>` : ''}
             <div style="display:flex;gap:6px">
               <select id="sel-unit-cmd" class="menu-select" style="flex:1">${cmdOpts}</select>
-              <button class="btn-sm" id="btn-unit-cmd">Назначить</button>
+              <button class="btn-sm" id="btn-unit-cmd">${Icons.users(12)} Назначить</button>
             </div>
-            <div class="info-box">ПКМ на карте — отдать приказ на перемещение</div>
+            <div class="info-box" style="font-size:11px;margin-top:6px">ПКМ на карте — приказ. Зажмите ПКМ и протащите — нарисуйте линию наступления.</div>
           </div>
+        </div>
         ` : ''}
       </div>
     `);
     if (isPlayerUnit) {
+      document.querySelectorAll<HTMLButtonElement>('.stance-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const s = btn.dataset.stance as UnitStance;
+          if (!s) return;
+          militarySystem.setStance(u.id, s);
+          this.showNotification(`Стойка: ${STANCE_META[s].label}`, 'info');
+          this._showUnitInfo(u.id);
+          this._refreshActivePanel();
+        });
+      });
+      document.getElementById('btn-unit-clear-line')?.addEventListener('click', () => {
+        militarySystem.clearOffensiveLine(u.id);
+        this._showUnitInfo(u.id);
+        this._refreshActivePanel();
+      });
       document.getElementById('btn-unit-promote')?.addEventListener('click', () => {
         const res = militarySystem.promoteUnit(u.id);
         this.showNotification(res.ok ? `Соединение укрупнено: ${ECHELON_META[res.echelon!].label}` : (res.reason ?? 'Ошибка'), res.ok ? 'success' : 'danger');
@@ -1567,9 +1730,15 @@ export class UISystem implements IGameSystem {
   showNotification(text: string, type: 'info' | 'warn' | 'danger' | 'success' = 'info'): void {
     const container = document.getElementById('notifications');
     if (!container) return;
+    const iconMap: Record<string, string> = {
+      info: Icons.shield(14),
+      warn: Icons.warn(14),
+      danger: Icons.close(14),
+      success: Icons.check(14)
+    };
     const n = document.createElement('div');
     n.className = `notification ${type}`;
-    n.textContent = text;
+    n.innerHTML = `<span class="notification-icon">${iconMap[type]}</span><span class="notification-text">${text}</span>`;
     container.appendChild(n);
     setTimeout(() => { n.classList.add('fade-out'); setTimeout(() => n.remove(), 350); }, 5000);
   }
@@ -1589,6 +1758,12 @@ export class UISystem implements IGameSystem {
   private _fmtMoney(n: number): string {
     if (Math.abs(n) >= 1000) return (n / 1000).toFixed(2) + ' трлн';
     return Math.round(n).toLocaleString('ru-RU') + ' млрд';
+  }
+
+  private _nextEchelonLabel(cur: Echelon): string {
+    const idx = ECHELON_ORDER.indexOf(cur);
+    if (idx === -1 || idx >= ECHELON_ORDER.length - 1) return cur;
+    return ECHELON_ORDER[idx + 1]!;
   }
 
   private _unitTypeIcon(type: UnitType): string {

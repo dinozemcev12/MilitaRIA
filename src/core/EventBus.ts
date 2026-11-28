@@ -106,6 +106,13 @@ export const GameEvents = {
   SUPPLY_CHANGED: 'military:supply_changed',
   CITY_CAPTURED: 'military:city_captured',
   COUNTRY_CAPITULATED: 'diplomacy:country_capitulated',
+  UNIT_STANCE_CHANGED: 'military:unit_stance_changed',
+  OFFENSIVE_LINE_SET: 'military:offensive_line_set',
+
+  // Territory / front line
+  TERRITORY_CAPTURED: 'territory:captured',
+  TERRITORY_UPDATED: 'territory:updated',
+  FRONT_CHANGED: 'territory:front_changed',
 
   // Tactical
   TACTICAL_MODE_ENTER: 'tactical:enter',

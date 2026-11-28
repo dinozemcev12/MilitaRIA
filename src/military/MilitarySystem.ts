@@ -32,6 +32,15 @@ export const ECHELON_META: Record<Echelon, { label: string; mult: number }> = {
   army:      { label: 'Армия',     mult: 3.2 }
 };
 
+export type UnitStance = 'front' | 'attack' | 'defend' | 'reserve';
+
+export const STANCE_META: Record<UnitStance, { label: string; short: string; color: string; desc: string }> = {
+  front:   { label: 'Держать фронт', short: 'ФРОНТ',  color: '#38bdf8', desc: 'Закрепляется на линии фронта, копает окопы и не отходит без приказа.' },
+  attack:  { label: 'Наступление',   short: 'АТАКА',  color: '#f59e0b', desc: 'Продвигается вперёд по линии наступления, продавливая фронт.' },
+  defend:  { label: 'Оборона',       short: 'ОБОРОНА', color: '#22c55e', desc: 'Стоит на месте, максимально ускоряет окопы и восстановление.' },
+  reserve: { label: 'Резерв',        short: 'РЕЗЕРВ', color: '#94a3b8', desc: 'Отдыхает в тылу, восстанавливает людей, организацию и снабжение.' }
+};
+
 export const COMMANDER_TRAITS: Record<string, { label: string; powerBonus: number; speedBonus: number }> = {
   'Ген.-м. Волков (Штурмовик)': { label: '+12% атака', powerBonus: 0.12, speedBonus: 0 },
   'Ген.-л. Соколов (Манёвр)': { label: '+15% скорость', powerBonus: 0, speedBonus: 0.15 },
@@ -58,11 +67,14 @@ export interface MilitaryUnit {
   countryCode: string;
   type: UnitType;
   name: string;
-  strength: number;      // 0..1000
+  strength: number;      // 0..1000 — боевая готовность
+  manpower: number;      // тыс. человек
+  maxManpower: number;   // тыс. человек
   morale: number;        // 0..1
   experience: number;    // 0..1
   supply: number;        // 0..1
   organization: number;  // 0..1
+  entrenchment: number;  // 0..1 — окопы/подготовленные позиции
   techLevel: number;     // 0..1
   lat: number;
   lng: number;
@@ -70,6 +82,9 @@ export interface MilitaryUnit {
   targetLng?: number;
   echelon?: Echelon;
   commander?: string;
+  stance?: UnitStance;
+  offensiveLine?: { lat: number; lng: number }[];
+  frontAnchor?: { lat: number; lng: number };
 }
 
 export interface ActiveBattle {
@@ -91,9 +106,11 @@ export class MilitarySystem implements IGameSystem {
   private units = new Map<string, MilitaryUnit>();
   private battles = new Map<string, ActiveBattle>();
   private occupiedCities = new Map<string, string>(); // "${countryCode}:${cityName}" -> occupierCode
+  private territoryProgress = new Map<string, number>();
   private idCounter = 0;
   private battleCounter = 0;
   private unsubscribeTick: (() => void) | null = null;
+  private unsubscribers: (() => void)[] = [];
 
   static instance: MilitarySystem;
   static getInstance(): MilitarySystem {
@@ -107,6 +124,24 @@ export class MilitarySystem implements IGameSystem {
     this.unsubscribeTick = eventBus.on(GameEvents.TIME_TICK, () => {
       this._onDayTick();
     }).unsubscribe;
+    this.unsubscribers.push(
+      eventBus.on(GameEvents.TERRITORY_UPDATED, (d: any) => {
+        this.territoryProgress.clear();
+        const stats = d?.stats ?? {};
+        for (const code of Object.keys(stats)) {
+          this.territoryProgress.set(code, Number(stats[code]?.progress ?? 0));
+        }
+      }).unsubscribe,
+      eventBus.on(GameEvents.TERRITORY_CAPTURED, (d: any) => {
+        if (!d?.owner || !d?.to) return;
+        // Синхронизируем городскую оккупацию, чтобы карточки и старые проверки видели фронт.
+        for (const city of WORLD_CITIES) {
+          if (city.countryCode !== d.owner) continue;
+          if (Math.abs(city.lat - d.lat) > 0.75 || Math.abs(city.lng - d.lng) > 0.75) continue;
+          this.occupiedCities.set(`${d.owner}:${city.name}`, d.to);
+        }
+      }).unsubscribe
+    );
     console.log(`[MilitarySystem] инициализировано, единиц: ${this.units.size}`);
   }
 
@@ -117,6 +152,8 @@ export class MilitarySystem implements IGameSystem {
   shutdown(): void {
     this.unsubscribeTick?.();
     this.unsubscribeTick = null;
+    for (const unsub of this.unsubscribers) unsub();
+    this.unsubscribers = [];
   }
 
   private _seedStartingUnits(): void {
@@ -131,20 +168,61 @@ export class MilitarySystem implements IGameSystem {
     }
   }
 
+  private _ensureUnitFields(u: MilitaryUnit): void {
+    if (u.maxManpower === undefined || u.maxManpower <= 0) {
+      const meta = UNIT_META[u.type];
+      u.maxManpower = Math.max(0.1, meta.manpower * 10 * ECHELON_META[u.echelon ?? 'battalion'].mult);
+    }
+    if (u.manpower === undefined || u.manpower <= 0) {
+      u.manpower = u.maxManpower * (Math.max(0, u.strength) / 1000);
+    }
+    u.entrenchment = u.entrenchment ?? 0;
+    u.organization = u.organization ?? 0.85;
+    u.stance = u.stance ?? 'front';
+  }
+
+  private _syncManpower(u: MilitaryUnit): void {
+    const ratio = Math.max(0, Math.min(1, u.strength / 1000));
+    u.manpower = Math.round(u.maxManpower * ratio * 10) / 10;
+  }
+
   private _onDayTick(): void {
     const unitList = Array.from(this.units.values());
     for (const u of unitList) {
-      if (u.targetLat !== undefined && u.targetLng !== undefined) {
-        const dLat = u.targetLat - u.lat;
-        const dLng = u.targetLng - u.lng;
+      this._ensureUnitFields(u);
+      const c = countrySystem.getCountry(u.countryCode);
+      if (!c) continue;
+      const bonuses = technologySystem.getCountryBonuses(u.countryCode);
+
+      // Линия наступления: последовательно ведём соединение по точкам.
+      if (u.stance === 'attack' && u.offensiveLine && u.offensiveLine.length > 0) {
+        const next = u.offensiveLine[0]!;
+        const atPoint = Math.hypot(next.lat - u.lat, next.lng - u.lng) < 0.15;
+        if (atPoint) {
+          u.offensiveLine.shift();
+          if (u.offensiveLine.length === 0) {
+            u.offensiveLine = undefined;
+            u.stance = 'front';
+          }
+        } else if (u.targetLat === undefined || u.targetLng === undefined) {
+          this.orderMove(u.id, next.lat, next.lng);
+        }
+      }
+
+      const hasTarget = u.targetLat !== undefined && u.targetLng !== undefined;
+      if (hasTarget) {
+        const dLat = u.targetLat! - u.lat;
+        const dLng = u.targetLng! - u.lng;
         const dist = Math.hypot(dLat, dLng);
-        const bonuses = technologySystem.getCountryBonuses(u.countryCode);
         const cmdBonus = u.commander ? (COMMANDER_TRAITS[u.commander]?.speedBonus ?? 0) : 0;
-        const supplySpeedMod = 0.5 + u.supply * 0.5;
-        const speed = (UNIT_META[u.type]?.speed ?? 0.8) * (1 + bonuses.unitSpeed + cmdBonus) * supplySpeedMod;
+        const orgSpeed = 0.45 + u.organization * 0.55;
+        const supplySpeedMod = 0.4 + u.supply * 0.6;
+        const stanceMod = u.stance === 'reserve' ? 0.7 : u.stance === 'attack' ? 1.15 : 1;
+        const speed = (UNIT_META[u.type]?.speed ?? 0.8) * 0.32
+          * (1 + bonuses.unitSpeed + cmdBonus) * supplySpeedMod * orgSpeed * stanceMod;
         if (dist <= speed) {
-          u.lat = u.targetLat;
-          u.lng = u.targetLng;
+          u.lat = u.targetLat!;
+          u.lng = u.targetLng!;
           u.targetLat = undefined;
           u.targetLng = undefined;
           eventBus.emit(GameEvents.UNIT_MOVED, { unitId: u.id, lat: u.lat, lng: u.lng });
@@ -152,17 +230,42 @@ export class MilitarySystem implements IGameSystem {
           u.lat += (dLat / dist) * speed;
           u.lng += (dLng / dist) * speed;
         }
-      }
-      // Восстановление снабжения и морали в мирное время
-      const c = countrySystem.getCountry(u.countryCode);
-      if (c) {
-        const bonuses = technologySystem.getCountryBonuses(u.countryCode);
-        u.supply = Math.min(1, Math.max(0.15, u.supply + (c.supplyLevel - u.supply) * 0.15));
-        if (c.warWith.length === 0) {
-          u.morale = Math.min(1, u.morale + 0.01 * (1 + bonuses.moraleRecovery));
-          u.organization = Math.min(1, u.organization + 0.02 * (1 + bonuses.orgBonus));
+        // Марш изматывает соединение и срывает подготовленные позиции.
+        u.organization = Math.max(0.15, u.organization - 0.012);
+        u.entrenchment = Math.max(0, u.entrenchment - 0.08);
+      } else {
+        // Окопы и восстановление на месте.
+        const digRate = u.stance === 'defend' ? 0.035 : u.stance === 'front' ? 0.02 : u.stance === 'reserve' ? 0 : 0.008;
+        u.entrenchment = Math.min(1, u.entrenchment + digRate);
+        u.organization = Math.min(1, u.organization + 0.018 * (1 + bonuses.orgBonus) * (0.5 + u.supply * 0.5));
+        if (u.stance !== 'reserve') {
+          u.morale = Math.min(1, u.morale + 0.006 * (1 + bonuses.moraleRecovery));
         }
       }
+
+      // Снабжение: чем дальше от столицы и хуже логистика страны, тем ниже.
+      const distCap = Math.hypot(u.lat - c.capLat, u.lng - c.capLng);
+      const distMod = Math.max(0.25, 1 - distCap / 70);
+      const targetSupply = Math.max(0.12, Math.min(1, c.supplyLevel * distMod));
+      u.supply = Math.min(1, Math.max(0.08, u.supply + (targetSupply - u.supply) * 0.16));
+
+      // Пополнение людьми из резерва страны.
+      if (!hasTarget && u.stance !== 'reserve' && u.supply > 0.45 && c.manpower > 0 && u.strength < 1000) {
+        const need = Math.min(u.maxManpower * 0.015, ((1000 - u.strength) / 1000) * u.maxManpower);
+        const available = Math.min(need, c.manpower);
+        if (available > 0.0001) {
+          c.manpower = Math.max(0, c.manpower - available);
+          u.strength = Math.min(1000, u.strength + (available / Math.max(0.001, u.maxManpower)) * 1000);
+        }
+      }
+
+      // Резерв восстанавливается быстрее.
+      if (u.stance === 'reserve') {
+        u.morale = Math.min(1, u.morale + 0.012 * (1 + bonuses.moraleRecovery));
+        u.organization = Math.min(1, u.organization + 0.01);
+      }
+
+      this._syncManpower(u);
     }
 
     // Проверка столкновений враждующих подразделений -> создание/обновление активных битв
@@ -199,7 +302,7 @@ export class MilitarySystem implements IGameSystem {
         const b = unitList[j]!;
         if (b.strength <= 0 || assigned.has(b.id) || !ca.warWith.includes(b.countryCode)) continue;
         const dist = Math.hypot(a.lat - b.lat, a.lng - b.lng);
-        if (dist < 2.5) {
+        if (dist < 1.25) {
           const bid = `battle_${++this.battleCounter}`;
           const atkUnits = unitList.filter(u => u.countryCode === a.countryCode && u.strength > 0 && Math.hypot(u.lat - a.lat, u.lng - a.lng) < 4).map(u => u.id);
           const defUnits = unitList.filter(u => u.countryCode === b.countryCode && u.strength > 0 && Math.hypot(u.lat - b.lat, u.lng - b.lng) < 4).map(u => u.id);
@@ -248,8 +351,8 @@ export class MilitarySystem implements IGameSystem {
       const attackers = unitList.filter(u => u.strength > 0 && c.warWith.includes(u.countryCode));
 
       for (const pt of points) {
-        const enemyNear = attackers.find(u => Math.hypot(u.lat - pt.lat, u.lng - pt.lng) < 1.9);
-        const defNear = defenders.some(u => Math.hypot(u.lat - pt.lat, u.lng - pt.lng) < 2.2);
+        const enemyNear = attackers.find(u => Math.hypot(u.lat - pt.lat, u.lng - pt.lng) < 0.95);
+        const defNear = defenders.some(u => Math.hypot(u.lat - pt.lat, u.lng - pt.lng) < 1.1);
 
         if (enemyNear && !defNear) {
           const prev = this.occupiedCities.get(pt.key);
@@ -287,10 +390,12 @@ export class MilitarySystem implements IGameSystem {
       else if (capCapturedBy && defenders.length === 0) prog = 1.0;
       else if (capCapturedBy) prog = 0.75;
 
+      // Линия фронта даёт основной вклад: доля потерянных клеток страны.
+      prog = Math.max(prog, this.territoryProgress.get(c.code) ?? 0);
       c.occupationProgress = Math.min(1, prog);
 
-      // Проверка капитуляции (>= 75% оккупации или захвачена столица при отсутствии живых войск)
-      if ((c.occupationProgress >= 0.75 || (capCapturedBy && defenders.length === 0)) && occupierCounts.size > 0) {
+      // Проверка капитуляции (>= 65% оккупации или захвачена столица при отсутствии живых войск)
+      if ((c.occupationProgress >= 0.65 || (capCapturedBy && defenders.length === 0)) && occupierCounts.size > 0) {
         let topOccupier = capCapturedBy ?? '';
         let bestScore = -1;
         for (const [occ, score] of occupierCounts.entries()) {
@@ -312,6 +417,8 @@ export class MilitarySystem implements IGameSystem {
   }
 
   private _resolveSkirmish(a: MilitaryUnit, b: MilitaryUnit, intensity = 1.0): void {
+    this._ensureUnitFields(a);
+    this._ensureUnitFields(b);
     const bonA = technologySystem.getCountryBonuses(a.countryCode);
     const bonB = technologySystem.getCountryBonuses(b.countryCode);
     const techMultA = 1 + (a.type === 'air' ? bonA.airPower : a.type === 'naval' ? bonA.navalPower : bonA.groundPower);
@@ -321,16 +428,30 @@ export class MilitarySystem implements IGameSystem {
     const echB = ECHELON_META[b.echelon ?? 'battalion'].mult;
     const cmdA = 1 + (a.commander ? (COMMANDER_TRAITS[a.commander]?.powerBonus ?? 0) : 0);
     const cmdB = 1 + (b.commander ? (COMMANDER_TRAITS[b.commander]?.powerBonus ?? 0) : 0);
+    const orgA = 0.4 + a.organization * 0.6;
+    const orgB = 0.4 + b.organization * 0.6;
+    const entA = 1 + a.entrenchment * 0.55;
+    const entB = 1 + b.entrenchment * 0.55;
 
-    const powA = (UNIT_META[a.type]?.power ?? 10) * echA * cmdA * (a.strength / 1000) * (0.5 + a.morale * 0.5) * a.supply * techMultA;
-    const powB = (UNIT_META[b.type]?.power ?? 10) * echB * cmdB * (b.strength / 1000) * (0.5 + b.morale * 0.5) * b.supply * techMultB;
-    const dmgToB = Math.round(Math.max(10, powA * 4 * intensity));
-    const dmgToA = Math.round(Math.max(10, powB * 4 * intensity));
+    const powA = (UNIT_META[a.type]?.power ?? 10) * echA * cmdA * entA
+      * (a.strength / 1000) * (0.5 + a.morale * 0.5) * (0.4 + a.supply * 0.6) * orgA * techMultA;
+    const powB = (UNIT_META[b.type]?.power ?? 10) * echB * cmdB * entB
+      * (b.strength / 1000) * (0.5 + b.morale * 0.5) * (0.4 + b.supply * 0.6) * orgB * techMultB;
+    const dmgToB = Math.round(Math.max(10, powA * 4 * intensity * (0.85 + Math.random() * 0.3)));
+    const dmgToA = Math.round(Math.max(10, powB * 4 * intensity * (0.85 + Math.random() * 0.3)));
 
     a.strength = Math.max(0, a.strength - dmgToA);
     b.strength = Math.max(0, b.strength - dmgToB);
+    a.morale = Math.max(0.1, a.morale - dmgToA / 4500);
+    b.morale = Math.max(0.1, b.morale - dmgToB / 4500);
+    a.organization = Math.max(0.1, a.organization - 0.025);
+    b.organization = Math.max(0.1, b.organization - 0.025);
+    a.entrenchment = Math.max(0, a.entrenchment - 0.12);
+    b.entrenchment = Math.max(0, b.entrenchment - 0.12);
     a.experience = Math.min(1, a.experience + 0.02);
     b.experience = Math.min(1, b.experience + 0.02);
+    this._syncManpower(a);
+    this._syncManpower(b);
 
     if (a.strength <= 0) this.units.delete(a.id);
     if (b.strength <= 0) this.units.delete(b.id);
@@ -339,20 +460,25 @@ export class MilitarySystem implements IGameSystem {
   createUnit(countryCode: string, type: UnitType, name: string, lat: number, lng: number): MilitaryUnit {
     const c = countrySystem.getCountry(countryCode);
     const id = `unit_${++this.idCounter}`;
+    const maxManpower = Math.max(0.1, (UNIT_META[type]?.manpower ?? 1) * 10 * ECHELON_META.battalion.mult);
     const unit: MilitaryUnit = {
       id,
       countryCode,
       type,
       name,
       strength: 1000,
+      manpower: maxManpower,
+      maxManpower,
       morale: 0.85,
       experience: 0.25,
       supply: 1.0,
       organization: 0.9,
+      entrenchment: 0,
       techLevel: c ? Math.min(1, c.militaryTech * 0.7) : 0.7,
       lat,
       lng,
-      echelon: 'battalion'
+      echelon: 'battalion',
+      stance: 'front'
     };
     this.units.set(id, unit);
     eventBus.emit(GameEvents.UNIT_CREATED, { unit });
@@ -386,9 +512,60 @@ export class MilitarySystem implements IGameSystem {
   orderMove(unitId: string, lat: number, lng: number): boolean {
     const u = this.units.get(unitId);
     if (!u) return false;
+    this._ensureUnitFields(u);
     u.targetLat = lat;
     u.targetLng = lng;
+    u.entrenchment = 0;
+    if (u.stance !== 'reserve') u.stance = 'attack';
     return true;
+  }
+
+  setStance(unitId: string, stance: UnitStance): boolean {
+    const u = this.units.get(unitId);
+    if (!u) return false;
+    this._ensureUnitFields(u);
+    if (u.stance === stance) return true;
+    u.stance = stance;
+    if (stance === 'reserve' || stance === 'defend') {
+      u.offensiveLine = undefined;
+      u.targetLat = undefined;
+      u.targetLng = undefined;
+    }
+    eventBus.emit(GameEvents.UNIT_STANCE_CHANGED, { unitId, stance });
+    return true;
+  }
+
+  setOffensiveLine(unitId: string, points: { lat: number; lng: number }[]): boolean {
+    const u = this.units.get(unitId);
+    if (!u || points.length === 0) return false;
+    this._ensureUnitFields(u);
+    u.offensiveLine = points.map(p => ({ lat: p.lat, lng: p.lng }));
+    u.stance = 'attack';
+    const first = u.offensiveLine[0]!;
+    u.targetLat = first.lat;
+    u.targetLng = first.lng;
+    u.entrenchment = 0;
+    eventBus.emit(GameEvents.OFFENSIVE_LINE_SET, { unitId, points: u.offensiveLine });
+    eventBus.emit(GameEvents.UNIT_STANCE_CHANGED, { unitId, stance: u.stance });
+    return true;
+  }
+
+  clearOffensiveLine(unitId: string): boolean {
+    const u = this.units.get(unitId);
+    if (!u) return false;
+    u.offensiveLine = undefined;
+    if (u.stance === 'attack') u.stance = 'front';
+    eventBus.emit(GameEvents.UNIT_STANCE_CHANGED, { unitId, stance: u.stance });
+    return true;
+  }
+
+  getStanceCounts(countryCode: string): Record<UnitStance, number> {
+    const counts: Record<UnitStance, number> = { front: 0, attack: 0, defend: 0, reserve: 0 };
+    for (const u of this.units.values()) {
+      if (u.countryCode !== countryCode) continue;
+      counts[u.stance ?? 'front']++;
+    }
+    return counts;
   }
 
   moveUnit(unitId: string, lat: number, lng: number): boolean {
@@ -407,8 +584,15 @@ export class MilitarySystem implements IGameSystem {
     const cost = 6 + idx * 2;
     if (c.money < cost) return { ok: false, reason: `Недостаточно средств (${cost} млрд $)` };
     c.changeMoney(-cost, `укрупнение соединения до: ${ECHELON_META[next].label}`);
+    this._ensureUnitFields(u);
+    const oldMax = u.maxManpower;
     u.echelon = next;
+    const newMax = Math.max(0.1, (UNIT_META[u.type]?.manpower ?? 1) * 10 * ECHELON_META[next].mult);
+    const ratio = oldMax > 0 ? u.manpower / oldMax : 1;
+    u.maxManpower = newMax;
+    u.manpower = Math.min(newMax, newMax * Math.max(0.5, ratio));
     u.strength = Math.min(1000, u.strength + 150);
+    this._syncManpower(u);
     return { ok: true, echelon: next };
   }
 
@@ -425,9 +609,15 @@ export class MilitarySystem implements IGameSystem {
     if (!a || !b || a.id === b.id || a.countryCode !== b.countryCode) {
       return { ok: false, reason: 'Невозможно объединить эти подразделения' };
     }
+    this._ensureUnitFields(a);
+    this._ensureUnitFields(b);
+    a.maxManpower = Math.max(a.maxManpower, b.maxManpower);
+    a.manpower = Math.min(a.maxManpower, a.manpower + b.manpower * 0.75);
     a.strength = Math.min(1000, Math.round((a.strength + b.strength) * 0.75));
     a.morale = (a.morale + b.morale) / 2;
     a.experience = Math.max(a.experience, b.experience);
+    a.entrenchment = Math.max(a.entrenchment, b.entrenchment);
+    this._syncManpower(a);
     this.units.delete(b.id);
     eventBus.emit(GameEvents.UNIT_MERGED, { kept: a.id, removed: b.id });
     return { ok: true };
@@ -481,6 +671,7 @@ export class MilitarySystem implements IGameSystem {
     if (!Array.isArray(s.units)) return;
     this.units.clear();
     for (const u of s.units as MilitaryUnit[]) {
+      this._ensureUnitFields(u);
       this.units.set(u.id, { ...u });
     }
     this.idCounter = typeof s.idCounter === 'number' ? s.idCounter : this.units.size;

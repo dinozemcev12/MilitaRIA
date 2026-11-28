@@ -8,6 +8,7 @@ import { PoliticsSystem } from './politics/PoliticsSystem.js';
 import { EconomySystem } from './economy/EconomySystem.js';
 import { DiplomacySystem } from './diplomacy/DiplomacySystem.js';
 import { MilitarySystem } from './military/MilitarySystem.js';
+import { TerritorySystem } from './military/TerritorySystem.js';
 import { TacticalSystem } from './tactical/TacticalSystem.js';
 import { EventsSystem } from './events/EventsSystem.js';
 import { AISystem } from './ai/AISystem.js';
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   gameLoop.registerSystem({ name: 'Production',priority: 48,  init: () => ProductionSystem.getInstance().init(),update: (dt) => ProductionSystem.getInstance().update(dt),shutdown: () => ProductionSystem.getInstance().shutdown() });
   gameLoop.registerSystem({ name: 'Diplomacy', priority: 50,  init: () => DiplomacySystem.getInstance().init(), update: (dt) => DiplomacySystem.getInstance().update(dt), shutdown: () => DiplomacySystem.getInstance().shutdown() });
   gameLoop.registerSystem({ name: 'Logistics', priority: 55,  init: () => LogisticsSystem.getInstance().init(), update: (dt) => LogisticsSystem.getInstance().update(dt), shutdown: () => LogisticsSystem.getInstance().shutdown() });
+  gameLoop.registerSystem({ name: 'Territory', priority: 58,  init: () => TerritorySystem.getInstance().init(), update: (dt) => TerritorySystem.getInstance().update(dt), shutdown: () => TerritorySystem.getInstance().shutdown() });
   gameLoop.registerSystem({ name: 'Military',  priority: 60,  init: () => MilitarySystem.getInstance().init(),  update: (dt) => MilitarySystem.getInstance().update(dt),  shutdown: () => MilitarySystem.getInstance().shutdown() });
   gameLoop.registerSystem({ name: 'Intel',     priority: 65,  init: () => IntelSystem.getInstance().init(),     update: (dt) => IntelSystem.getInstance().update(dt),     shutdown: () => IntelSystem.getInstance().shutdown() });
   gameLoop.registerSystem({ name: 'Tactical',  priority: 70,  init: () => TacticalSystem.getInstance().init(),  update: (dt) => TacticalSystem.getInstance().update(dt),  shutdown: () => TacticalSystem.getInstance().shutdown() });

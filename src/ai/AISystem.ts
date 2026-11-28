@@ -10,6 +10,7 @@ import { diplomacySystem } from '../diplomacy/DiplomacySystem.js';
 import { economySystem } from '../economy/EconomySystem.js';
 import { politicsSystem } from '../politics/PoliticsSystem.js';
 import { militarySystem } from '../military/MilitarySystem.js';
+import { territorySystem } from '../military/TerritorySystem.js';
 import { technologySystem, TECH_TREE } from '../tech/TechnologySystem.js';
 import { productionSystem } from '../production/ProductionSystem.js';
 import { logisticsSystem } from '../logistics/LogisticsSystem.js';
@@ -88,24 +89,59 @@ export class AISystem implements IGameSystem {
   }
 
   private _commandWarUnits(c: Country): void {
+    const ai = this.aiStates.get(c.code);
     const myUnits = militarySystem.getUnitsByCountry(c.code).filter(u => u.strength > 0);
     if (!myUnits.length) return;
     const enemyCodes = c.warWith;
     const enemyUnits = militarySystem.getAllUnits().filter(u => u.strength > 0 && enemyCodes.includes(u.countryCode));
     const enemyCap = countrySystem.getCountry(enemyCodes[0] ?? '');
 
+    // Линия фронта: ИИ распределяет соединения по клеткам, а не гоняет всех в одну точку.
+    const front = territorySystem.getFrontCells(c.code)
+      .filter(cell => cell.owner !== c.code || cell.controller !== c.code)
+      .sort((a, b) => a.defense - b.defense);
+
+    const assigned = new Set<number>();
+    const aggressive = ai?.personality === 'aggressive' || ai?.personality === 'expansionist';
+
     for (let i = 0; i < myUnits.length; i++) {
       const u = myUnits[i]!;
-      // Если уже идёт в бой или движется к цели, не дёргаем каждый раз
       if (u.targetLat !== undefined && u.targetLng !== undefined) continue;
 
       // Один отряд остаётся прикрывать столицу, если враг близко
       if (i === 0 && myUnits.length > 1) {
         const threat = enemyUnits.some(e => Math.hypot(e.lat - c.capLat, e.lng - c.capLng) < 14);
         if (threat) {
+          militarySystem.setStance(u.id, 'defend');
           militarySystem.orderMove(u.id, c.capLat, c.capLng);
           continue;
         }
+      }
+
+      if (front.length > 0) {
+        // Атакующие ищут слабейшую ещё не занятую клетку, обороняющиеся — ближайшую к себе.
+        let pick = front.find(cell => !assigned.has(cell.index) && (aggressive ? cell.defense < 60 : true));
+        if (!pick) pick = front.find(cell => !assigned.has(cell.index));
+        if (!pick) pick = front[0]!;
+        assigned.add(pick.index);
+
+        const dist = Math.hypot(pick.lat - u.lat, pick.lng - u.lng);
+        const shouldAttack = aggressive || pick.defense < 25;
+        militarySystem.setStance(u.id, shouldAttack ? 'attack' : 'front');
+        if (dist > 1.5) {
+          if (shouldAttack) {
+            // Строим линию наступления: текущая позиция -> промежуточная -> цель
+            const midLat = u.lat + (pick.lat - u.lat) * 0.4;
+            const midLng = u.lng + (pick.lng - u.lng) * 0.4;
+            militarySystem.setOffensiveLine(u.id, [
+              { lat: midLat, lng: midLng },
+              { lat: pick.lat, lng: pick.lng }
+            ]);
+          } else {
+            militarySystem.orderMove(u.id, pick.lat, pick.lng);
+          }
+        }
+        continue;
       }
 
       if (enemyUnits.length > 0) {
@@ -115,9 +151,21 @@ export class AISystem implements IGameSystem {
           const d = Math.hypot(e.lat - u.lat, e.lng - u.lng);
           if (d < bestD) { bestD = d; nearest = e; }
         }
-        militarySystem.orderMove(u.id, nearest.lat, nearest.lng);
+        militarySystem.setStance(u.id, 'attack');
+        const midLat = u.lat + (nearest.lat - u.lat) * 0.5;
+        const midLng = u.lng + (nearest.lng - u.lng) * 0.5;
+        militarySystem.setOffensiveLine(u.id, [
+          { lat: midLat, lng: midLng },
+          { lat: nearest.lat, lng: nearest.lng }
+        ]);
       } else if (enemyCap) {
-        militarySystem.orderMove(u.id, enemyCap.capLat, enemyCap.capLng);
+        militarySystem.setStance(u.id, 'attack');
+        const midLat = u.lat + (enemyCap.capLat - u.lat) * 0.5;
+        const midLng = u.lng + (enemyCap.capLng - u.lng) * 0.5;
+        militarySystem.setOffensiveLine(u.id, [
+          { lat: midLat, lng: midLng },
+          { lat: enemyCap.capLat, lng: enemyCap.capLng }
+        ]);
       }
     }
   }

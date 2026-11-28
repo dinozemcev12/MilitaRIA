@@ -6,6 +6,7 @@ import { eventBus, GameEvents } from './EventBus.js';
 import { gameTime } from './GameTime.js';
 import { countrySystem } from '../country/CountrySystem.js';
 import { militarySystem } from '../military/MilitarySystem.js';
+import { territorySystem } from '../military/TerritorySystem.js';
 import { diplomacySystem } from '../diplomacy/DiplomacySystem.js';
 import { eventsSystem } from '../events/EventsSystem.js';
 import { technologySystem } from '../tech/TechnologySystem.js';
@@ -15,7 +16,7 @@ import { intelSystem } from '../intel/IntelSystem.js';
 import { aiSystem } from '../ai/AISystem.js';
 import { uiSystem } from '../ui/UISystem.js';
 
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
 const AUTOSAVE_KEY = 'militaria_autosave';
 const SLOT_PREFIX = 'militaria_slot_';
 const MAX_SLOTS = 5;
@@ -28,6 +29,7 @@ export interface SaveData {
   gameDate: { year: number; month: number; day: number };
   countries: Record<string, any>;
   military: any;
+  territory?: any;
   diplomacy?: any;
   events: any;
   tech?: any;
@@ -162,6 +164,7 @@ class SaveSystem {
       gameDate: { ...gameTime.date },
       countries: countriesState,
       military: militarySystem.getState(),
+      territory: territorySystem.getState(),
       diplomacy: diplomacySystem.getState(),
       events: eventsSystem.getState(),
       tech: technologySystem.getState(),
@@ -180,6 +183,7 @@ class SaveSystem {
 
     // Военные и дипломатия
     if (data.military) militarySystem.setState(data.military);
+    if (data.territory) territorySystem.setState(data.territory);
     if (data.diplomacy) diplomacySystem.setState(data.diplomacy);
 
     // События
