@@ -148,5 +148,9 @@ export const GameEvents = {
   // Save
   GAME_SAVED: 'save:game_saved',
   GAME_LOADED: 'save:game_loaded',
-  AUTOSAVE: 'save:autosave'
+  AUTOSAVE: 'save:autosave',
+
+  // Context menu
+  CONTEXT_MENU_REQUEST: 'ui:context_menu_request',
+  CONTEXT_MENU_CLOSE: 'ui:context_menu_close'
 } as const;

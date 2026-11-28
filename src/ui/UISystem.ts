@@ -57,6 +57,9 @@ export class UISystem implements IGameSystem {
     this.openPanel('politics');
     this._seedInitialNews();
 
+    // Контекстное меню
+    eventBus.on(GameEvents.CONTEXT_MENU_REQUEST, (d: any) => this._showContextMenu(d));
+
     // На старте игра в главном меню — ставим на паузу до нажатия "Начать кампанию"
     gameTime.pause();
     this._updateSpeedUI();
@@ -153,6 +156,16 @@ export class UISystem implements IGameSystem {
     tac.id = 'tactical-overlay';
     tac.className = 'hidden';
     document.body.appendChild(tac);
+
+    // Контекстное меню
+    const ctxMenu = document.createElement('div');
+    ctxMenu.id = 'context-menu';
+    ctxMenu.className = 'hidden';
+    ctxMenu.innerHTML = '<div id="context-menu-body"></div>';
+    document.body.appendChild(ctxMenu);
+    ctxMenu.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => this._hideContextMenu());
+    document.addEventListener('contextmenu', () => this._hideContextMenu());
   }
 
   /* ================================================================
@@ -1317,6 +1330,99 @@ export class UISystem implements IGameSystem {
 
   private _closeModal(): void {
     document.getElementById('modal-overlay')!.classList.add('hidden');
+  }
+
+  /* ---------- Контекстное меню ---------- */
+  private _showContextMenu(d: any): void {
+    const menu = document.getElementById('context-menu');
+    const body = document.getElementById('context-menu-body');
+    if (!menu || !body) return;
+    this._hideContextMenu();
+
+    menu.style.left = `${d.x}px`;
+    menu.style.top = `${d.y}px`;
+    menu.classList.remove('hidden');
+
+    if (d.target === 'unit' && d.unitId) {
+      const u = militarySystem.getUnit(d.unitId);
+      if (!u) return;
+      const stance = u.stance ?? 'front';
+      body.innerHTML = `
+        <div class="ctx-section">
+          <div class="ctx-title">${u.name}</div>
+          <div class="ctx-item" data-action="stance-front">${Icons.shield(12)} Стойка: Фронт</div>
+          <div class="ctx-item" data-action="stance-attack">${Icons.arrowUp(12)} Стойка: Атака</div>
+          <div class="ctx-item" data-action="stance-defend">${Icons.shield(12)} Стойка: Оборона</div>
+          <div class="ctx-item" data-action="stance-reserve">${Icons.users(12)} Стойка: Резерв</div>
+        </div>
+        <div class="ctx-section">
+          <div class="ctx-title">Линия наступления</div>
+          ${u.offensiveLine?.length
+            ? `<div class="ctx-item ctx-danger" data-action="clear-line">${Icons.close(12)} Отменить линию</div>`
+            : `<div class="ctx-item ctx-disabled" disabled>${Icons.pin(12)} Нарисовать линию (ПКМ+тащить на карте)</div>`}
+        </div>
+      `;
+      // Показываем активную стойку
+      setTimeout(() => {
+        body.querySelectorAll<HTMLElement>('[data-action]').forEach(btn => {
+          const action = btn.dataset.action!;
+          if (action === `stance-${stance}`) {
+            btn.classList.add('ctx-active');
+          }
+        });
+      }, 0);
+
+      body.querySelectorAll('[data-action="stance-front"]').forEach(btn => {
+        btn.addEventListener('click', () => { militarySystem.setStance(u.id, 'front'); this._hideContextMenu(); this._refreshActivePanel(); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="stance-attack"]').forEach(btn => {
+        btn.addEventListener('click', () => { militarySystem.setStance(u.id, 'attack'); this._hideContextMenu(); this._refreshActivePanel(); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="stance-defend"]').forEach(btn => {
+        btn.addEventListener('click', () => { militarySystem.setStance(u.id, 'defend'); this._hideContextMenu(); this._refreshActivePanel(); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="stance-reserve"]').forEach(btn => {
+        btn.addEventListener('click', () => { militarySystem.setStance(u.id, 'reserve'); this._hideContextMenu(); this._refreshActivePanel(); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="clear-line"]').forEach(btn => {
+        btn.addEventListener('click', () => { militarySystem.clearOffensiveLine(u.id); this._hideContextMenu(); this._refreshActivePanel(); }, { once: true });
+      });
+    } else if (d.target === 'country' && d.countryCode) {
+      const c = countrySystem.getCountry(d.countryCode);
+      const player = countrySystem.getPlayer();
+      if (!c || !player) return;
+      const isAtWar = player.warWith.includes(c.code);
+      const isAlly = player.allies.includes(c.code);
+      body.innerHTML = `
+        <div class="ctx-section">
+          <div class="ctx-title">${c.nameRu}</div>
+          <div class="ctx-item" data-action="inspect">${Icons.flag(12)} Осмотреть страну</div>
+          ${!isAtWar && !isAlly
+            ? `<div class="ctx-item" data-action="ally">${Icons.handshake(12)} Предложить союз</div>
+               <div class="ctx-item ctx-warn" data-action="war">${Icons.close(12)} Объявить войну</div>`
+            : isAtWar
+              ? `<div class="ctx-item" data-action="peace">${Icons.handshake(12)} Предложить мир</div>`
+              : `<div class="ctx-item ctx-disabled" disabled>${Icons.handshake(12)} Союзник</div>`}
+        </div>
+      `;
+      body.querySelectorAll('[data-action="inspect"]').forEach(btn => {
+        btn.addEventListener('click', () => { this._hideContextMenu(); worldMapSystem.focusCountry(c.code); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="ally"]').forEach(btn => {
+        btn.addEventListener('click', () => { this._hideContextMenu(); this._showDiplomacyModal(player, c.code); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="war"]').forEach(btn => {
+        btn.addEventListener('click', () => { this._hideContextMenu(); diplomacySystem.declareWar(player.code, c.code); this.showNotification(`Война с ${c.nameRu} объявлена.`, 'danger'); }, { once: true });
+      });
+      body.querySelectorAll('[data-action="peace"]').forEach(btn => {
+        btn.addEventListener('click', () => { this._hideContextMenu(); diplomacySystem.signPeace(player.code, c.code); this.showNotification(`Мир с ${c.nameRu} заключён.`, 'success'); }, { once: true });
+      });
+    }
+  }
+
+  private _hideContextMenu(): void {
+    const menu = document.getElementById('context-menu');
+    if (menu) menu.classList.add('hidden');
   }
 
   private _showEventModal(ev: RandomEvent): void {

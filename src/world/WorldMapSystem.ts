@@ -207,14 +207,6 @@ export class WorldMapSystem implements IGameSystem {
   private _attachInput(): void {
     const c = this.canvas!;
     c.addEventListener('mousedown', (e) => {
-      if (e.button === 2) {
-        e.preventDefault();
-        if (!this.selectedUnitId) return;
-        const rect = c.getBoundingClientRect();
-        const { lat, lng } = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-        this.rightDrag = { startX: e.clientX, startY: e.clientY, points: [{ lat, lng }], moved: false };
-        return;
-      }
       if (e.button !== 0) return;
       this.isDragging = true;
       this.didDrag = false;
@@ -230,20 +222,6 @@ export class WorldMapSystem implements IGameSystem {
         this.cx = this.camStart.x + dx;
         this.cy = this.camStart.y + dy;
         this._render();
-        return;
-      }
-      if (this.rightDrag && (e.buttons & 2)) {
-        const rect = c.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        const { lat, lng } = this.screenToWorld(mx, my);
-        const last = this.rightDrag.points[this.rightDrag.points.length - 1]!;
-        const lastP = this.worldToScreen(last.lat, last.lng);
-        if (Math.hypot(lastP.x - mx, lastP.y - my) > 6) {
-          this.rightDrag.points.push({ lat, lng });
-          this.rightDrag.moved = true;
-          this._render();
-        }
         return;
       }
       if (e.target === c) {
@@ -273,22 +251,7 @@ export class WorldMapSystem implements IGameSystem {
     });
 
     window.addEventListener('mouseup', (e) => {
-      if (e.button === 2 && this.rightDrag) {
-        const drag = this.rightDrag;
-        this.rightDrag = null;
-        const unitId = this.selectedUnitId;
-        if (unitId) {
-          if (drag.moved && drag.points.length >= 2) {
-            militarySystem.setOffensiveLine(unitId, drag.points);
-          } else {
-            const rect = c.getBoundingClientRect();
-            const { lat, lng } = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-            militarySystem.orderMove(unitId, lat, lng);
-          }
-          this._render();
-        }
-        return;
-      }
+      if (e.button !== 0) return;
       this.isDragging = false;
     });
 
@@ -330,7 +293,7 @@ export class WorldMapSystem implements IGameSystem {
         }
       }
 
-      // 2. Клик по юниту игрока
+      // 2. Клик по юниту игрока — просто выделяем
       if (player) {
         for (const u of militarySystem.getUnitsByCountry(player.code)) {
           const p = this.worldToScreen(u.lat, u.lng);
@@ -343,16 +306,48 @@ export class WorldMapSystem implements IGameSystem {
         }
       }
 
-      // 3. Клик по стране
+      // 3. Клик по стране — осматриваем, снимаем выделение с юнита
       this.selectedUnitId = null;
       const { lat, lng } = this.screenToWorld(sx, sy);
       const code = this._pickCountry(lat, lng);
       this.inspectCountry(code);
     });
 
+    // ПКМ — контекстное меню армии или страны
     c.addEventListener('contextmenu', (e) => {
-      // ПКМ используется для приказа/рисования линии наступления.
       e.preventDefault();
+      const rect = c.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const { lat, lng } = this.screenToWorld(sx, sy);
+      const player = countrySystem.getPlayer();
+
+      // Сначала проверяем клик по своему юниту
+      if (player) {
+        for (const u of militarySystem.getUnitsByCountry(player.code)) {
+          const p = this.worldToScreen(u.lat, u.lng);
+          if (Math.hypot(p.x - sx, p.y - sy) < 14) {
+            this.selectedUnitId = u.id;
+            eventBus.emit(GameEvents.CONTEXT_MENU_REQUEST, {
+              target: 'unit',
+              unitId: u.id,
+              x: e.clientX,
+              y: e.clientY
+            });
+            this._render();
+            return;
+          }
+        }
+      }
+
+      // Проверяем клик по стране
+      const code = this._pickCountry(lat, lng);
+      eventBus.emit(GameEvents.CONTEXT_MENU_REQUEST, {
+        target: 'country',
+        countryCode: code ?? undefined,
+        x: e.clientX,
+        y: e.clientY
+      });
     });
   }
 
